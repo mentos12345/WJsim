@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IoTForge</title>
+<link rel="stylesheet" href="vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="vendor/codemirror/material-darker.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand"><svg class="dot" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#e87d0d"/><path d="M13.2 4 7.5 13.2h4l-1.2 6.8 6.2-9.6h-4.1L14.6 4z" fill="#fff"/></svg>IoTForge</div>
+  <div class="menu">
+    <button class="tb" id="btnNew" title="โปรเจกต์ใหม่ (Ctrl+N)">ใหม่</button>
+    <button class="tb" id="btnOpen" title="เปิดไฟล์ (Ctrl+O)">เปิด</button>
+    <button class="tb" id="btnSave" title="บันทึก (Ctrl+S)">บันทึก</button>
+    <button class="tb" id="btnExamples">ตัวอย่าง</button>
+    <button class="tb" id="btnExport" title="ส่งออกโค้ดไปใช้กับ Arduino IDE">ส่งออก .ino</button>
+  </div>
+  <div class="seg" id="modeSeg">
+    <button data-mode="basic" class="on">Basic</button>
+    <button data-mode="advanced">Advanced</button>
+  </div>
+  <label class="boardSel">บอร์ด <select id="boardSelect"></select></label>
+  <div class="spacer"></div>
+  <span id="projName" class="muted"></span>
+  <button class="run" id="btnRun">▶ เริ่มจำลอง</button>
+  <button class="tb" id="btnAbout" title="เกี่ยวกับและเครดิต">?</button>
+</header>
+
+<div id="main">
+  <aside id="palette">
+    <input id="partSearch" type="search" placeholder="ค้นหาอุปกรณ์…">
+    <div id="paletteHint" class="muted small"></div>
+    <div id="partList"></div>
+  </aside>
+
+  <section id="stage">
+    <div id="world">
+      <svg id="wires" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="partsLayer"></div>
+      <svg id="wireOverlay" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div id="stageTools">
+      <button class="tb" id="zoomOut" title="ซูมออก">−</button>
+      <span id="zoomLbl">150%</span>
+      <button class="tb" id="zoomIn" title="ซูมเข้า">+</button>
+      <button class="tb" id="zoomFit" title="พอดีจอ">⤢</button>
+    </div>
+    <div id="stageHint" class="muted small"></div>
+    <div id="props" hidden></div>
+    <div id="toast" hidden></div>
+  </section>
+
+  <div class="splitter v" id="splitRight"></div>
+  <aside id="right">
+    <nav class="tabs" id="rightTabs">
+      <button data-tab="blocks" class="on">Block</button>
+      <button data-tab="code">C++</button>
+      <button data-tab="dash">Dashboard</button>
+      <button data-tab="check">ตรวจวงจร <span id="checkBadge" class="badge" hidden></span></button>
+    </nav>
+    <div class="pane" id="pane-blocks"><div id="blocklyDiv"></div></div>
+    <div class="pane" id="pane-code" hidden>
+      <div class="codebar"><span id="codeSource" class="muted small"></span><div class="spacer"></div><button class="tb small" id="btnRegen" title="สร้างโค้ดจาก Block ใหม่">↺ ใช้โค้ดจาก Block</button></div>
+      <div id="codeHost"></div>
+    </div>
+    <div class="pane" id="pane-dash" hidden>
+      <div class="dashbar">
+        <span class="muted small" id="netStatus">WiFi: ยังไม่เชื่อมต่อ</span><div class="spacer"></div>
+        <button class="tb small" id="btnAddWidget">+ เพิ่มวิดเจ็ต</button>
+      </div>
+      <div id="widgets"></div>
+      <h4>ข้อความ MQTT ล่าสุด</h4>
+      <div id="mqttLog" class="log"></div>
+      <div class="pubrow"><input id="pubTopic" placeholder="topic"><input id="pubMsg" placeholder="ข้อความ"><button class="tb small" id="btnPub">ส่ง</button></div>
+      <p class="muted small">MQTT broker จำลองอยู่ในแอป ไม่ได้ส่งข้อมูลออกอินเทอร์เน็ต เปิดหลายหน้าต่าง (เมนูไฟล์ → หน้าต่างใหม่) เพื่อให้หลายบอร์ดคุยกันได้</p>
+    </div>
+    <div class="pane" id="pane-check" hidden>
+      <div class="codebar"><span class="muted small">ปัญหาของวงจร</span><div class="spacer"></div><button class="tb small" id="btnAutoPower">⚡ ต่อไฟ/กราวด์ให้อัตโนมัติ</button></div>
+      <div id="checkList"></div>
+    </div>
+  </aside>
+</div>
+
+<div class="splitter h" id="splitBottom"></div>
+<footer id="bottom">
+  <nav class="tabs" id="bottomTabs">
+    <button data-tab="serial" class="on">Serial Monitor</button>
+    <button data-tab="lora">LoRa</button>
+    <button data-tab="files">ไฟล์ใน SD card</button>
+    <div class="spacer"></div>
+    <button class="tb small" id="btnClearSerial">ล้าง</button>
+  </nav>
+  <div class="bpane" id="bpane-serial">
+    <pre id="serialOut"></pre>
+    <div class="pubrow"><input id="serialIn" placeholder="พิมพ์ข้อความส่งเข้า Serial แล้วกด Enter"></div>
+  </div>
+  <div class="bpane" id="bpane-lora" hidden>
+    <pre id="loraOut"></pre>
+    <div class="pubrow"><input id="loraIn" placeholder="จำลองแพ็กเก็ต LoRa ที่ส่งมาจากอุปกรณ์อื่น แล้วกด Enter"></div>
+  </div>
+  <div class="bpane" id="bpane-files" hidden><pre id="sdOut"></pre></div>
+</footer>
+
+<div id="modal" hidden><div class="dialog" id="dialog"></div></div>
+
+<script src="vendor/wokwi-elements.js"></script>
+<script src="vendor/blockly.min.js"></script>
+<script src="vendor/blockly-msg-th.js"></script>
+<script src="vendor/codemirror/codemirror.js"></script>
+<script src="vendor/codemirror/clike.js"></script>
+<script src="vendor/codemirror/closebrackets.js"></script>
+<script src="vendor/codemirror/matchbrackets.js"></script>
+<script src="js/parts.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/transpile.js"></script>
+<script src="js/runtime.js"></script>
+<script src="js/iot.js"></script>
+<script src="js/blocks.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

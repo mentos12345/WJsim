@@ -1,0 +1,976 @@
+/* IoTForge — simulation runtime: Arduino API + library shims driving the parts on the canvas */
+(function () {
+  'use strict';
+  const ed = IOTF.editor, P = IOTF.PARTS;
+  const STOP = { stop: true };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  const sim = {
+    running: false, gen: 0, out: {}, listeners: [], timers: [], ints: [], tones: {}, sd: {}, serialIn: '',
+    loraRx: [], warnOnce: new Set(), partState: {}
+  };
+  IOTF.sim = sim;
+
+  /* ---------- serial monitor ---------- */
+  let serBuf = '', serTimer = null;
+  function serialWrite(text, cls) {
+    if (cls) { flushSerial(); const el = document.getElementById('serialOut'); const s = document.createElement('span'); s.className = cls; s.textContent = text; el.appendChild(s); trimSerial(el); el.scrollTop = el.scrollHeight; return; }
+    serBuf += text;
+    if (!serTimer) serTimer = requestAnimationFrame(flushSerial);
+  }
+  function flushSerial() {
+    serTimer = null; if (!serBuf) return;
+    const el = document.getElementById('serialOut');
+    el.appendChild(document.createTextNode(serBuf)); serBuf = '';
+    trimSerial(el); el.scrollTop = el.scrollHeight;
+  }
+  function trimSerial(el) { while (el.childNodes.length > 400) el.removeChild(el.firstChild); }
+  sim.log = (t, cls) => serialWrite(t + '\n', cls || 'sinfo');
+  function warn(key, msg) { if (sim.warnOnce.has(key)) return; sim.warnOnce.add(key); serialWrite('⚠ ' + msg + '\n', 'swarn'); }
+
+  /* ---------- circuit queries ---------- */
+  function bd() { return ed.boardDef(); }
+  function powered(p) { return ed.isPowered(p, sim.nets); }
+  function members(net) {
+    if (!sim.memo[net]) sim.memo[net] = sim.nets.members(net).map((m) => ({ part: ed.part(m.p), pin: m.pin })).filter((m) => m.part);
+    return sim.memo[net];
+  }
+  const netOf = (p, pin) => sim.nets.netOf(p.id, pin);
+  const gpioNet = (g) => sim.nets.gpioNet(g);
+  function partsOfKind(kinds) { return ed.project.parts.filter((p) => kinds.includes(P[p.type].kind)); }
+  function findPart(kinds, pin, gpio) {
+    const list = partsOfKind(kinds);
+    if (gpio !== undefined && gpio !== null) {
+      const n = gpioNet(gpio);
+      const hit = list.find((p) => n && netOf(p, pin) === n);
+      if (hit) return hit;
+      if (!ed.isBasic()) return null;
+    }
+    return list[0] || null;
+  }
+  function busOk(p, sigs) { // I2C / SPI devices: in Advanced the bus pins must reach the board
+    if (ed.isBasic()) return true;
+    if (!powered(p)) return false;
+    return sigs.every((pin) => sim.nets.gpiosOn(netOf(p, pin)).length > 0);
+  }
+  function el(p) { return ed.els[p.id] && ed.els[p.id].el; }
+  function st(p) { return sim.partState[p.id] || (sim.partState[p.id] = {}); }
+
+  // level a part drives onto one of its pins (undefined = not driving)
+  function partDrive(p, pin, depth) {
+    const d = P[p.type], s = p.sim, e = el(p);
+    if (!powered(p) && !['button', 'slideswitch', 'dip'].includes(d.kind)) return undefined;
+    switch (d.kind) {
+      case 'button': {
+        if (!(e && e.pressed) && !st(p).pressed) return undefined;
+        const other = pin.startsWith('1') ? '2.l' : '1.l';
+        return netLevel(netOf(p, other), depth + 1, p);
+      }
+      case 'slideswitch': {
+        const v = e ? e.value : 0, con = v ? '3' : '1';
+        if (pin === '2') return netLevel(netOf(p, con), depth + 1, p);
+        if (pin === con) return netLevel(netOf(p, '2'), depth + 1, p);
+        return undefined;
+      }
+      case 'dip': {
+        const m = /^(\d)([ab])$/.exec(pin); if (!m || !e || !e.values[+m[1] - 1]) return undefined;
+        return netLevel(netOf(p, m[1] + (m[2] === 'a' ? 'b' : 'a')), depth + 1, p);
+      }
+      case 'pir': return pin === 'OUT' ? (s.motion ? 1 : 0) : undefined;
+      case 'tilt': return pin === 'OUT' ? (s.tilted ? 1 : 0) : undefined;
+      case 'analogmod': return pin === d.digitalPin ? (s.level > 50 ? 0 : 1) : undefined;
+      case 'joystick': return pin === 'SEL' ? (e && e.pressed ? 0 : 1) : undefined;
+      case 'encoder': { const q = st(p); if (pin === 'CLK') return q.clk ?? 1; if (pin === 'DT') return q.dt ?? 1; if (pin === 'SW') return e && e.pressed ? 0 : 1; return undefined; }
+      case 'dialer': { const q = st(p); if (pin === 'DIAL') return q.dial ?? 1; if (pin === 'PULSE') return q.pulse ?? 1; return undefined; }
+      case 'ultrasonic': return pin === 'ECHO' ? 0 : undefined;
+      case 'irrecv': return pin === 'DAT' ? 1 : undefined;
+      case 'heartbeat': return pin === 'OUT' ? (heartWave(s.bpm) > 0.5 ? 1 : 0) : undefined;
+    }
+    return undefined;
+  }
+  // logic level of a net (0/1/undefined); `except` = gpio being read
+  function netLevel(net, depth = 0, skipPart = null, except = null) {
+    if (net == null || depth > 4) return undefined;
+    if (sim.nets.hasGnd(net)) return 0;
+    if (sim.nets.hasVcc(net)) return 1;
+    for (const g of sim.nets.gpiosOn(net)) {
+      if (g === except) continue;
+      const o = sim.out[g];
+      if (o && o.mode === 1) return o.v > 0 ? 1 : 0;
+    }
+    for (const m of members(net)) {
+      if (m.part === skipPart || P[m.part.type].kind === 'board') continue;
+      const v = partDrive(m.part, m.pin, depth);
+      if (v !== undefined) return v;
+    }
+    for (const g of sim.nets.gpiosOn(net)) { const o = sim.out[g]; if (o && (o.mode === 2 || o.pull)) return 1; if (o && o.mode === 3) return 0; }
+    return undefined;
+  }
+  function pwmOf(net) {
+    for (const g of sim.nets.gpiosOn(net)) { const o = sim.out[g]; if (o && o.mode === 1) return o.v; }
+    if (sim.nets.hasVcc(net)) return 1;
+    return 0;
+  }
+  function heartWave(bpm) { const t = (performance.now() / 1000) * bpm / 60 % 1; return Math.exp(-Math.pow((t - 0.15) / 0.03, 2)) + 0.25 * Math.exp(-Math.pow((t - 0.4) / 0.08, 2)); }
+  function tdsVoltage(ppm) { // inverse of the common DFRobot formula (25°C)
+    const f = (v) => (133.42 * v * v * v - 255.86 * v * v + 857.39 * v) * 0.5;
+    let lo = 0, hi = 3.3; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) < ppm) lo = m; else hi = m; } return (lo + hi) / 2;
+  }
+  // voltage on a net, in volts
+  function netVoltage(net) {
+    const B = bd(), V = B.vref;
+    for (const m of members(net)) {
+      const p = m.part, d = P[p.type], s = p.sim, e = el(p);
+      if (d.kind === 'board') continue;
+      if (!powered(p)) continue;
+      const pin = m.pin;
+      switch (d.kind) {
+        case 'pot': if (pin === 'SIG' && e) return V * (e.value - (e.min || 0)) / ((e.max || 1023) - (e.min || 0)); break;
+        case 'joystick': if (pin === 'VERT' && e) return V * (1 - (e.yValue + 1) / 2); if (pin === 'HORZ' && e) return V * (1 - (e.xValue + 1) / 2); break;
+        case 'analogmod': if (pin === d.analogPin) return V * (d.invert ? 1 - s.level / 100 : s.level / 100); break;
+        case 'ntc': if (pin === 'OUT') { const k = Math.exp(3950 * (1 / (s.temp + 273.15) - 1 / 298.15)); return V / (1 + 1 / k); } break;
+        case 'heartbeat': if (pin === 'OUT') return V * (0.3 + 0.5 * heartWave(s.bpm)); break;
+        case 'ph': if (pin === 'Po') return Math.min(V, s.ph / 3.5); break;
+        case 'tds': if (pin === 'A') return Math.min(V, tdsVoltage(s.ppm)); break;
+      }
+    }
+    const lv = netLevel(net);
+    if (lv !== undefined) return lv ? (sim.nets.hasVcc(net) ? V : pwmOf(net) * V) : 0;
+    return 0;
+  }
+
+  /* ---------- pin numbers ---------- */
+  function toGpio(pin) {
+    if (typeof pin === 'string' && /^\d+$/.test(pin)) pin = +pin;
+    return pin;
+  }
+  function analogGpio(pin) {
+    pin = toGpio(pin);
+    const B = bd();
+    if (B !== IOTF.BOARDS.esp32 && typeof pin === 'number') {
+      const first = B.consts.A0;
+      if (first !== undefined && pin < first && pin < (B === IOTF.BOARDS.mega ? 16 : 8)) return first + pin;
+    }
+    return pin;
+  }
+
+  /* ---------- outputs → parts ---------- */
+  function refresh() {
+    if (!sim.running) return;
+    const B = bd(), board = ed.board();
+    ed.project.parts.forEach((p) => {
+      const d = P[p.type], e = el(p); if (!e) return;
+      const on = powered(p);
+      switch (d.kind) {
+        case 'board': {
+          const o = sim.out[B.led.pin]; e[B.led.prop] = !!(o && o.mode === 1 && o.v > 0);
+          if ('ledPower' in e) e.ledPower = true;
+          break;
+        }
+        case 'led': {
+          const a = netLevel(netOf(p, 'A')), c = netLevel(netOf(p, 'C'));
+          const lit = a === 1 && (c === 0 || (c === undefined && ed.isBasic()));
+          e.value = lit; e.brightness = lit ? Math.max(0.15, pwmOf(netOf(p, 'A'))) : 0;
+          break;
+        }
+        case 'rgb': {
+          const com = netLevel(netOf(p, 'COM')), anode = com === 1;
+          ['R', 'G', 'B'].forEach((ch, i) => {
+            const n = netOf(p, ch), lv = netLevel(n); let v = lv === undefined ? 0 : pwmOf(n);
+            if (anode) v = lv === undefined ? 0 : 1 - v;
+            e[['ledRed', 'ledGreen', 'ledBlue'][i]] = clamp(v, 0, 1);
+          });
+          break;
+        }
+        case 'bargraph': e.values = Array.from({ length: 10 }, (_, i) => (netLevel(netOf(p, 'A' + (i + 1))) === 1 && netLevel(netOf(p, 'C' + (i + 1))) !== 1) ? 1 : 0); break;
+        case 'seg7': {
+          const com = netLevel(netOf(p, 'COM.1')), anode = com === 1;
+          const v = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'DP'].map((s) => { const l = netLevel(netOf(p, s)); return l === undefined ? 0 : (anode ? (l === 0 ? 1 : 0) : l); });
+          if (v.join() !== (e.values || []).join()) e.values = v;
+          break;
+        }
+        case 'buzzer': {
+          const n = netOf(p, '2'), g = sim.nets.gpiosOn(n), tn = g.map((x) => sim.tones[x]).find(Boolean);
+          const level = netLevel(n) === 1;
+          e.hasSignal = !!(on && (tn || level));
+          sound(p.id, on && tn ? tn.freq : 0);
+          break;
+        }
+        case 'relay': ed.els[p.id].wrap.classList.toggle('energized', netLevel(netOf(p, 'COIL1')) === 1 && netLevel(netOf(p, 'COIL2')) !== 1); break;
+        case 'relay4': for (let i = 1; i <= 4; i++) { const c = e.q && e.q('.ch' + i); if (c) c.setAttribute('fill', on && netLevel(netOf(p, 'IN' + i)) === 0 ? '#ff2a2a' : '#4a1414'); } break;
+        case 'gps': { const c = e.q && e.q('.fix'); if (c) c.setAttribute('fill', on && p.sim.sats >= 3 && (performance.now() % 1000) < 120 ? '#ff3b30' : '#5a1a17'); break; }
+        case 'loadcell': { const t = e.q && e.q('.kg'); if (t) t.textContent = p.sim.weight + ' g'; break; }
+        case 'hx711': { const lc = partsOfKind(['loadcell'])[0]; if (lc) p.sim.weight = lc.sim.weight; break; }
+      }
+    });
+  }
+  function safeCall(fn) { try { const r = fn(); if (r && r.catch) r.catch(onError); } catch (e) { onError(e); } }
+
+  /* ---------- audio ---------- */
+  let actx = null; const osc = {};
+  function sound(id, freq) {
+    const cur = osc[id];
+    if (!freq) { if (cur) { cur.o.stop(); delete osc[id]; } return; }
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (cur) { if (cur.f !== freq) { cur.o.frequency.value = freq; cur.f = freq; } return; }
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.03; o.connect(g).connect(actx.destination); o.start();
+      osc[id] = { o, f: freq };
+    } catch (e) { /* audio not available */ }
+  }
+
+  function readPin(g) {
+    const o = sim.out[g];
+    if (o && o.mode === 1) return o.v > 0 ? 1 : 0;
+    const n = gpioNet(g);
+    const lv = netLevel(n, 0, null, g);
+    if (lv !== undefined) return lv;
+    if (o && (o.mode === 2 || o.pull)) return 1;
+    return 0;
+  }
+
+  /* ---------- printing helpers ---------- */
+  function fmtNum(v, f) {
+    if (typeof v === 'boolean') return v ? '1' : '0';
+    if (typeof v !== 'number') return String(v);
+    if (f === 16) return (v >>> 0).toString(16).toUpperCase();
+    if (f === 2) return (v >>> 0).toString(2);
+    if (f === 8) return (v >>> 0).toString(8);
+    if (f === 10) return String(Math.trunc(v));
+    if (Number.isNaN(v)) return 'nan';
+    if (!Number.isFinite(v)) return 'inf';
+    if (f !== undefined) return v.toFixed(f);
+    return Number.isInteger(v) && !sim.floatHint ? String(v) : v.toFixed(2);
+  }
+  function sprintf(fmt, ...args) {
+    let i = 0;
+    return String(fmt).replace(/%([-+0 #]*)(\d+)?(?:\.(\d+))?(l{0,2}|h)?([diufFeEgGxXcsop%])/g, (m, flags, w, prec, len, t) => {
+      if (t === '%') return '%';
+      let a = args[i++], s;
+      switch (t) {
+        case 'd': case 'i': case 'u': s = String(Math.trunc(Number(a) || 0)); break;
+        case 'f': case 'F': s = (Number(a) || 0).toFixed(prec === undefined ? 6 : +prec); break;
+        case 'e': case 'E': s = (Number(a) || 0).toExponential(prec === undefined ? 6 : +prec); break;
+        case 'g': case 'G': s = String(+(Number(a) || 0).toPrecision(prec === undefined ? 6 : +prec || 1)); break;
+        case 'x': s = (Number(a) >>> 0).toString(16); break;
+        case 'X': s = (Number(a) >>> 0).toString(16).toUpperCase(); break;
+        case 'o': s = (Number(a) >>> 0).toString(8); break;
+        case 'c': s = typeof a === 'number' ? String.fromCharCode(a) : String(a)[0] || ''; break;
+        default: s = String(a);
+      }
+      if (w) s = flags.includes('-') ? s.padEnd(+w) : s.padStart(+w, flags.includes('0') && t !== 's' ? '0' : ' ');
+      if (flags.includes('0') && w && s.startsWith('0-')) s = '-' + s.slice(2).padStart(+w - 1, '0');
+      return s;
+    });
+  }
+
+  /* ---------- the environment the user program runs in ---------- */
+  function makeEnv() {
+    const B = bd(), board = ed.board();
+    const env = {};
+    const C = Object.assign({
+      HIGH: 1, LOW: 0, INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, INPUT_PULLDOWN: 3, CHANGE: 1, FALLING: 2, RISING: 3,
+      DEC: 10, HEX: 16, OCT: 8, BIN: 2, DHT11: 11, DHT21: 21, DHT22: 22, AM2301: 21,
+      WL_IDLE_STATUS: 0, WL_NO_SSID_AVAIL: 1, WL_CONNECTED: 3, WL_CONNECT_FAILED: 4, WL_CONNECTION_LOST: 5, WL_DISCONNECTED: 6,
+      WIFI_STA: 1, WIFI_AP: 2, WIFI_AP_STA: 3, WIFI_OFF: 0,
+      SSD1306_WHITE: 1, SSD1306_BLACK: 0, SSD1306_INVERSE: 2, WHITE: 1, BLACK: 0, INVERSE: 2, SSD1306_SWITCHCAPVCC: 2, SSD1306_EXTERNALVCC: 1,
+      ILI9341_BLACK: 0x0000, ILI9341_NAVY: 0x000F, ILI9341_DARKGREEN: 0x03E0, ILI9341_DARKCYAN: 0x03EF, ILI9341_MAROON: 0x7800, ILI9341_PURPLE: 0x780F, ILI9341_OLIVE: 0x7BE0,
+      ILI9341_LIGHTGREY: 0xC618, ILI9341_DARKGREY: 0x7BEF, ILI9341_BLUE: 0x001F, ILI9341_GREEN: 0x07E0, ILI9341_CYAN: 0x07FF, ILI9341_RED: 0xF800, ILI9341_MAGENTA: 0xF81F,
+      ILI9341_YELLOW: 0xFFE0, ILI9341_WHITE: 0xFFFF, ILI9341_ORANGE: 0xFD20, ILI9341_GREENYELLOW: 0xAFE5, ILI9341_PINK: 0xFC18,
+      NEO_GRB: 82, NEO_RGB: 6, NEO_GRBW: 210, NEO_KHZ800: 0, NEO_KHZ400: 256,
+      FILE_READ: 0, FILE_WRITE: 1, FILE_APPEND: 2, O_READ: 0, O_WRITE: 1, NO_KEY: '', SERIAL_8N1: 0x800001c,
+      ENABLE_LED_FEEDBACK: 1, DISABLE_LED_FEEDBACK: 0, NEC: 8, PI: Math.PI, HALF_PI: Math.PI / 2, TWO_PI: Math.PI * 2, DEG_TO_RAD: Math.PI / 180, RAD_TO_DEG: 180 / Math.PI, EULER: Math.E,
+      MPU6050_RANGE_2_G: 0, MPU6050_RANGE_4_G: 1, MPU6050_RANGE_8_G: 2, MPU6050_RANGE_16_G: 3, MPU6050_RANGE_250_DEG: 0, MPU6050_RANGE_500_DEG: 1, MPU6050_RANGE_1000_DEG: 2, MPU6050_RANGE_2000_DEG: 3,
+      MPU6050_BAND_260_HZ: 0, MPU6050_BAND_184_HZ: 1, MPU6050_BAND_94_HZ: 2, MPU6050_BAND_44_HZ: 3, MPU6050_BAND_21_HZ: 4, MPU6050_BAND_10_HZ: 5, MPU6050_BAND_5_HZ: 6,
+      LSBFIRST: 0, MSBFIRST: 1, NULL: 0, nullptr: null, MFRC522_SPICLOCK: 4000000,
+      __DATE__: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).replace(',', ''),
+      __TIME__: new Date().toTimeString().slice(0, 8), PRESSED: 1, RELEASED: 2, HOLD: 3, IDLE: 0
+    }, B.consts);
+    Object.assign(env, C);
+
+    // --- core
+    env.pinMode = (pin, mode) => {
+      const g = toGpio(pin), o = sim.out[g] || (sim.out[g] = { mode: 0, v: 0 });
+      o.mode = mode; if (mode !== 1) o.v = 0;
+      if (mode === 1 && (B.inputOnly || []).includes(g)) warn('io' + g, `GPIO${g} เป็นขาอินพุตอย่างเดียว ใช้เป็น OUTPUT ไม่ได้`);
+    };
+    env.digitalWrite = (pin, val) => {
+      const g = toGpio(pin), o = sim.out[g] || (sim.out[g] = { mode: 0, v: 0 });
+      const v = val ? 1 : 0;
+      if (o.mode !== 1) { o.pull = !!v; if (!sim.pinModeHint.has(g)) { sim.pinModeHint.add(g); warn('pm' + g, `digitalWrite(${pin}) ก่อนเรียก pinMode(${pin}, OUTPUT) ขาจะยังไม่เป็นเอาต์พุต`); } return; }
+      o.v = v;
+      const n = gpioNet(g);
+      if (n && v && sim.nets.hasGnd(n)) warn('sh' + g, `ขา ${pin} สั่ง HIGH แต่ต่อลง GND ตรง ๆ (ลัดวงจร)`);
+    };
+    env.digitalRead = (pin) => readPin(toGpio(pin));
+    env.analogRead = (pin) => {
+      const g = analogGpio(pin), n = gpioNet(g);
+      if (n == null) return 0;
+      return Math.round(clamp(netVoltage(n) / B.vref, 0, 1) * B.adcMax);
+    };
+    env.analogReadMilliVolts = (pin) => Math.round(env.analogRead(pin) / B.adcMax * B.vref * 1000);
+    env.analogReadResolution = () => { };
+    env.analogWrite = (pin, val) => {
+      const g = toGpio(pin), o = sim.out[g] || (sim.out[g] = { mode: 1, v: 0 });
+      o.mode = 1; o.v = clamp(val / 255, 0, 1);
+    };
+    const ledc = {};
+    env.ledcSetup = (ch, freq, res) => { ledc['c' + ch] = Object.assign(ledc['c' + ch] || {}, { res: res || 8, freq }); return freq; };
+    env.ledcAttachPin = (pin, ch) => { ledc['c' + ch] = Object.assign(ledc['c' + ch] || { res: 8 }, { pin }); env.pinMode(pin, 1); };
+    env.ledcAttach = (pin, freq, res) => { ledc['p' + pin] = { pin, res: res || 8, freq }; env.pinMode(pin, 1); return true; };
+    env.ledcAttachChannel = (pin, freq, res) => env.ledcAttach(pin, freq, res);
+    const ledcTarget = (x) => ledc['c' + x] || ledc['p' + x] || { pin: x, res: 8 };
+    env.ledcWrite = (x, duty) => { const c = ledcTarget(x); const o = sim.out[c.pin] || (sim.out[c.pin] = { mode: 1, v: 0 }); o.mode = 1; o.v = clamp(duty / (Math.pow(2, c.res) - 1), 0, 1); };
+    env.ledcWriteTone = (x, freq) => { const c = ledcTarget(x); if (freq > 0) sim.tones[c.pin] = { freq }; else delete sim.tones[c.pin]; env.ledcWrite(x, freq > 0 ? Math.pow(2, c.res - 1) : 0); return freq; };
+    env.ledcDetachPin = env.ledcDetach = () => { };
+    env.tone = (pin, freq, dur) => {
+      const g = toGpio(pin); sim.tones[g] = { freq: Math.max(31, freq) };
+      if (dur) { const t = setTimeout(() => { if (sim.tones[g] && sim.tones[g].freq === Math.max(31, freq)) delete sim.tones[g]; }, dur); sim.timers.push(t); }
+    };
+    env.noTone = (pin) => { delete sim.tones[toGpio(pin)]; };
+    env.pulseIn = (pin, level, timeout) => {
+      const g = toGpio(pin), n = gpioNet(g);
+      const hc = partsOfKind(['ultrasonic']).find((p) => netOf(p, 'ECHO') === n && powered(p));
+      if (!hc) return 0;
+      const tr = sim.nets.gpiosOn(netOf(hc, 'TRIG'))[0];
+      if (!ed.isBasic() && tr === undefined) return 0;
+      const us = Math.round(clamp(hc.sim.distance, 2, 400) * 58.2);
+      return timeout && us > timeout ? 0 : us;
+    };
+    env.pulseInLong = env.pulseIn;
+    env.shiftOut = () => { }; env.shiftIn = () => 0;
+    env.millis = () => Math.floor(performance.now() - sim.t0);
+    env.micros = () => Math.floor((performance.now() - sim.t0) * 1000);
+    env.delay = async (ms) => { check(); if (ms > 0) await sleep(ms); else await sleep(0); check(); };
+    env.delayMicroseconds = async (us) => { check(); if (us >= 1000) await sleep(us / 1000); else await env.__y(); };
+    let ycount = 0, ylast = performance.now();
+    env.__y = async () => {
+      check();
+      if (++ycount % 500 === 0 || performance.now() - ylast > 12) { ylast = performance.now(); await sleep(0); check(); }
+    };
+    function check() { if (!sim.running || sim.curGen !== sim.gen) throw STOP; }
+    env.attachInterrupt = (n, fn, mode) => {
+      let g = n;
+      if (B !== IOTF.BOARDS.esp32 && B !== IOTF.BOARDS.rp2040 && (n === 0 || n === 1) && sim.intPinHint !== n) g = n === 0 ? 2 : 3;
+      env.detachInterrupt(g);
+      sim.ints.push({ gpio: g, fn, mode, last: undefined });
+    };
+    env.digitalPinToInterrupt = (pin) => { sim.intPinHint = pin; return toGpio(pin); };
+    env.detachInterrupt = (n) => { sim.ints = sim.ints.filter((i) => i.gpio !== n); };
+    env.interrupts = env.noInterrupts = () => { };
+    // math
+    env.map = (x, a, b, c, d) => Math.trunc((x - a) * (d - c) / (b - a) + c);
+    env.constrain = (x, a, b) => clamp(x, a, b);
+    Object.assign(env, { min: Math.min, max: Math.max, abs: Math.abs, pow: Math.pow, sqrt: Math.sqrt, sq: (x) => x * x, sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos, atan: Math.atan, atan2: Math.atan2, exp: Math.exp, log: Math.log, log10: Math.log10, floor: Math.floor, ceil: Math.ceil, round: Math.round, fabs: Math.abs, fmod: (a, b) => a % b, isnan: Number.isNaN, isinf: (x) => !Number.isFinite(x) && !Number.isNaN(x), radians: (d) => d * Math.PI / 180, degrees: (r) => r * 180 / Math.PI });
+    env.random = (a, b) => (b === undefined ? Math.floor(Math.random() * a) : Math.floor(a + Math.random() * (b - a)));
+    env.randomSeed = () => { }; env.esp_random = () => Math.floor(Math.random() * 4294967295);
+    Object.assign(env, { bitRead: (x, n) => (x >> n) & 1, bitSet: (x, n) => x | (1 << n), bitClear: (x, n) => x & ~(1 << n), bitWrite: (x, n, b) => (b ? x | (1 << n) : x & ~(1 << n)), bit: (n) => 1 << n, lowByte: (x) => x & 0xff, highByte: (x) => (x >> 8) & 0xff, word: (h, l) => (h << 8) | l });
+    Object.assign(env, { isDigit: (c) => /^[0-9]$/.test(c), isAlpha: (c) => /^[A-Za-z]$/.test(c), isAlphaNumeric: (c) => /^[A-Za-z0-9]$/.test(c), isSpace: (c) => /^\s$/.test(c), isUpperCase: (c) => /^[A-Z]$/.test(c), isLowerCase: (c) => /^[a-z]$/.test(c), isPunct: (c) => /^[!-\/:-@[-`{-~]$/.test(c) });
+    env.atoi = (s) => parseInt(s, 10) || 0; env.atol = env.atoi; env.atof = (s) => parseFloat(s) || 0;
+    env.strlen = (s) => String(s).length; env.strcmp = (a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0);
+    env.strncmp = (a, b, n) => env.strcmp(String(a).slice(0, n), String(b).slice(0, n));
+    env.strstr = (a, b) => (String(a).includes(b) ? String(a).slice(String(a).indexOf(b)) : null);
+    env.memset = () => { }; env.memcpy = () => { };
+    env.makeKeymap = (k) => k;
+    env.__int = (x) => (typeof x === 'string' ? (x.length === 1 && Number.isNaN(+x) ? x.charCodeAt(0) : x.length === 1 ? x.charCodeAt(0) : Math.trunc(+x) || 0) : typeof x === 'boolean' ? +x : Math.trunc(+x) || 0);
+    env.__char = (x) => (typeof x === 'number' ? String.fromCharCode(x) : String(x).charAt(0));
+    env.__arr = function arr(dims, dv, f) { const [n, ...rest] = dims; return Array.from({ length: n }, () => (rest.length ? arr(rest, dv, f) : f ? f() : dv)); };
+    env.__sizeof = (x) => (Array.isArray(x) ? x.length : typeof x === 'string' ? x.length + 1 : 4);
+    env.__sprintf = sprintf; env.__dtostrf = (v, w, p) => Number(v).toFixed(p).padStart(w);
+    env.__strReplace = (s, a, b) => String(s).split(String(a)).join(String(b));
+    env.String = Object.assign(function (v, f) {
+      if (v === undefined) return '';
+      if (typeof v === 'number' && f !== undefined) return fmtNum(v, f);
+      if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2);
+      if (Array.isArray(v)) return v.join('');
+      return String(v);
+    }, { fromCharCode: String.fromCharCode });
+    env.yield = () => sleep(0);
+
+    // --- Serial ports
+    class HardwareSerial {
+      constructor(n) { this.n = n; this.gps = null; this.gpsBuf = ''; }
+      begin(baud) { this.baud = baud; if (this.n !== 0) this.gps = partsOfKind(['gps'])[0] || null; return true; }
+      end() { }
+      _out(t) { if (this.n === 0) serialWrite(t); }
+      print(v, f) { const s = fmtNum(v, f); this._out(s); return s.length; }
+      println(v, f) { const s = v === undefined ? '' : fmtNum(v, f); this._out(s + '\n'); return s.length + 1; }
+      printf(fmt, ...a) { const s = sprintf(fmt, ...a); this._out(s); return s.length; }
+      write(v) { this._out(typeof v === 'number' ? String.fromCharCode(v) : String(v)); return 1; }
+      flush() { }
+      _feed() {
+        if (this.n === 0 || !this.gps || !powered(this.gps)) return;
+        const now = performance.now();
+        if (!this.gpsBuf && (!this.lastNmea || now - this.lastNmea >= 1000)) { this.lastNmea = now; this.gpsBuf = nmea(this.gps.sim); }
+      }
+      available() { if (this.n === 0) return sim.serialIn.length; this._feed(); return this.gpsBuf.length; }
+      read() {
+        if (this.n === 0) { if (!sim.serialIn) return -1; const c = sim.serialIn[0]; sim.serialIn = sim.serialIn.slice(1); return c; }
+        this._feed(); if (!this.gpsBuf) return -1; const c = this.gpsBuf[0]; this.gpsBuf = this.gpsBuf.slice(1); return c;
+      }
+      peek() { return this.n === 0 ? (sim.serialIn[0] ?? -1) : (this.gpsBuf[0] ?? -1); }
+      readString() { if (this.n === 0) { const s = sim.serialIn; sim.serialIn = ''; return s; } const s = this.gpsBuf; this.gpsBuf = ''; return s; }
+      readStringUntil(ch) { const src = this.n === 0 ? sim.serialIn : this.gpsBuf; const i = src.indexOf(ch); const s = i < 0 ? src : src.slice(0, i); if (this.n === 0) sim.serialIn = i < 0 ? '' : src.slice(i + 1); else this.gpsBuf = i < 0 ? '' : src.slice(i + 1); return s; }
+      parseInt() { const m = /-?\d+/.exec(sim.serialIn); if (!m) { sim.serialIn = ''; return 0; } sim.serialIn = sim.serialIn.slice(m.index + m[0].length); return +m[0]; }
+      parseFloat() { const m = /-?\d+(\.\d+)?/.exec(sim.serialIn); if (!m) { sim.serialIn = ''; return 0; } sim.serialIn = sim.serialIn.slice(m.index + m[0].length); return +m[0]; }
+      setTimeout() { }
+      valueOf() { return 1; }
+    }
+    env.HardwareSerial = HardwareSerial;
+    env.Serial = new HardwareSerial(0); env.Serial1 = new HardwareSerial(1); env.Serial2 = new HardwareSerial(2); env.Serial3 = new HardwareSerial(3);
+    env.SoftwareSerial = class extends HardwareSerial { constructor() { super(9); } listen() { return true; } };
+    env.Wire = { begin() { }, setClock() { }, beginTransmission(a) { this.a = a; }, endTransmission() { return [0x27, 0x3f, 0x3c, 0x3d, 0x68, 0x69, 0x68].includes(this.a) ? 0 : 2; }, write() { return 1; }, requestFrom() { return 0; }, available() { return 0; }, read() { return 0; } };
+    env.SPI = { begin() { }, end() { }, beginTransaction() { }, endTransaction() { }, transfer: () => 0, setFrequency() { } };
+    env.ESP = { restart() { sim.log('ESP.restart() — เริ่มโปรแกรมใหม่'); setTimeout(() => IOTF.app.restart(), 50); throw STOP; }, getFreeHeap: () => 250000, getChipId: () => 0x1d2c3b, getEfuseMac: () => 0x24a1607b1d2cn, getChipModel: () => 'ESP32-D0WDQ6' };
+
+    // --- WiFi
+    let wifi = { status: 0, ssid: '', ip: '0.0.0.0' };
+    env.WiFi = {
+      mode() { return true; }, setHostname() { return true; }, persistent() { }, setAutoReconnect() { },
+      begin(ssid, pass) {
+        if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว เลือกบอร์ด ESP32 หรือ Nano RP2040 Connect`); wifi.status = 1; return 1; }
+        wifi = { status: 6, ssid: String(ssid || ''), ip: '0.0.0.0' };
+        IOTF.iot.setWifi('กำลังเชื่อมต่อ ' + wifi.ssid + '…');
+        sim.timers.push(setTimeout(() => { if (!sim.running) return; wifi.status = 3; wifi.ip = '192.168.1.' + (100 + Math.floor(Math.random() * 50)); IOTF.iot.setWifi(`WiFi: ${wifi.ssid} · IP ${wifi.ip}`, true); }, 1200));
+        return wifi.status;
+      },
+      status: () => wifi.status, isConnected: () => wifi.status === 3, disconnect() { wifi.status = 6; IOTF.iot.setWifi('WiFi: ตัดการเชื่อมต่อ'); return true; },
+      reconnect() { return true; }, localIP: () => new IPAddress(wifi.ip), gatewayIP: () => new IPAddress('192.168.1.1'), subnetMask: () => new IPAddress('255.255.255.0'),
+      macAddress: () => '24:0A:C4:1D:2C:3B', RSSI: () => (wifi.status === 3 ? -52 - Math.floor(Math.random() * 6) : 0), SSID: () => wifi.ssid,
+      softAP() { return true; }, softAPIP: () => new IPAddress('192.168.4.1'), scanNetworks: () => 1, waitForConnectResult: async () => { while (wifi.status !== 3) await env.delay(100); return 3; }
+    };
+    class IPAddress { constructor(s) { this.s = typeof s === 'string' ? s : [...arguments].join('.'); } toString() { return this.s; } }
+    env.IPAddress = IPAddress;
+    env.WiFiClient = class { connect() { return wifi.status === 3; } connected() { return wifi.status === 3; } stop() { } print() { } println() { } available() { return 0; } read() { return -1; } setInsecure() { } setCACert() { } };
+    env.WiFiClientSecure = env.WiFiClient;
+
+    // --- MQTT (PubSubClient) through the in-app broker
+    let clientSeq = 0;
+    env.PubSubClient = class {
+      constructor() { this.cb = null; this.q = []; this.ok = false; this.id = 'dev' + (++clientSeq) + '-' + Math.random().toString(36).slice(2, 6); this.host = ''; }
+      setClient() { return this; } setServer(h, p) { this.host = String(h); this.port = p; return this; } setCallback(fn) { this.cb = fn; return this; }
+      setBufferSize() { return true; } setKeepAlive() { return this; } setSocketTimeout() { return this; }
+      connect(id) {
+        if (wifi.status !== 3) { this.ok = false; return false; }
+        this.ok = true; this.cid = String(id || this.id);
+        IOTF.iot.log(`อุปกรณ์ "${this.cid}" เชื่อมต่อ broker ${this.host || ''}`, 'd');
+        return true;
+      }
+      connected() { return this.ok && wifi.status === 3; }
+      state() { return this.connected() ? 0 : -1; }
+      disconnect() { this.ok = false; IOTF.iot.unsubscribeAll(this.id); }
+      publish(topic, payload, retained) { if (!this.connected()) return false; IOTF.iot.publish(String(topic), Array.isArray(payload) ? payload.join('') : String(payload), !!retained, this.id); return true; }
+      subscribe(topic) { if (!this.connected()) return false; IOTF.iot.subscribe(this.id, String(topic), (t, m) => this.q.push([t, m])); return true; }
+      unsubscribe(topic) { IOTF.iot.unsubscribe(this.id, String(topic)); return true; }
+      loop() {
+        if (!this.connected()) return false;
+        while (this.q.length) {
+          const [t, m] = this.q.shift();
+          if (this.cb) { const bytes = Object.assign(m.split(''), { toString() { return this.join(''); } }); safeCall(() => this.cb(t, bytes, bytes.length)); }
+        }
+        return true;
+      }
+    };
+
+    // --- DHT
+    env.DHT = class {
+      constructor(pin, type) { this.pin = toGpio(pin); this.type = type; }
+      begin() { }
+      _p() { const p = findPart(['dht'], 'SDA', this.pin); return p && powered(p) ? p : null; }
+      read() { return !!this._p(); }
+      readTemperature(f) { const p = this._p(); if (!p) return NaN; const t = Math.round(p.sim.temp * 10) / 10; return f ? t * 9 / 5 + 32 : t; }
+      readHumidity() { const p = this._p(); return p ? Math.round(p.sim.hum * 10) / 10 : NaN; }
+      convertCtoF(c) { return c * 9 / 5 + 32; } convertFtoC(f) { return (f - 32) * 5 / 9; }
+      computeHeatIndex(t, h, isF = true) {
+        let T = isF ? t : t * 9 / 5 + 32;
+        let hi = 0.5 * (T + 61 + (T - 68) * 1.2 + h * 0.094);
+        if (hi > 79) hi = -42.379 + 2.04901523 * T + 10.14333127 * h - 0.22475541 * T * h - 0.00683783 * T * T - 0.05481717 * h * h + 0.00122874 * T * T * h + 0.00085282 * T * h * h - 0.00000199 * T * T * h * h;
+        return isF ? hi : (hi - 32) * 5 / 9;
+      }
+    };
+
+    // --- Servo
+    env.Servo = class {
+      constructor() { this.a = 90; this.part = null; }
+      attach(pin) { this.pin = toGpio(pin); this.part = findPart(['servo'], 'PWM', this.pin); if (!this.part) warn('servo' + pin, `ไม่พบ Servo ที่ต่อกับขา ${pin}`); return 1; }
+      attached() { return !!this.part; } detach() { this.part = null; }
+      write(a) { this.a = clamp(Math.round(a), 0, 180); if (this.part && powered(this.part)) el(this.part).angle = this.a; }
+      writeMicroseconds(us) { this.write((us - 544) / (2400 - 544) * 180); }
+      read() { return this.a; } setPeriodHertz() { }
+    };
+    env.ESP32Servo = env.Servo;
+
+    // --- LCD (I2C and parallel)
+    class LCD {
+      constructor(a, cols, rows) { this.cols = cols || 16; this.rows = rows || 2; this.cx = 0; this.cy = 0; }
+      _find() {
+        const want = this.cols >= 20 ? 'lcd2004' : 'lcd1602';
+        const list = partsOfKind(['lcd']); const p = list.find((q) => q.type === want) || list[0];
+        if (!p) { warn('lcd', 'ไม่พบจอ LCD ในวงจร'); return null; }
+        if (!busOk(p, ['SDA', 'SCL'])) { warn('lcdbus', 'จอ LCD ยังไม่ได้ต่อไฟหรือสาย SDA/SCL'); return null; }
+        return p;
+      }
+      begin(c, r) { if (c) { this.cols = c; this.rows = r || this.rows; } this.p = this._find(); if (this.p) { const e = el(this.p); this.cols = this.p.type === 'lcd2004' ? 20 : 16; this.rows = this.p.type === 'lcd2004' ? 4 : 2; this.buf = new Uint8Array(this.cols * this.rows).fill(32); e.backlight = true; this._push(); } }
+      init() { this.begin(); } _push() { if (this.p) el(this.p).characters = new Uint8Array(this.buf); }
+      clear() { if (!this.buf) return; this.buf.fill(32); this.cx = this.cy = 0; this._push(); }
+      home() { this.cx = this.cy = 0; }
+      setCursor(c, r) { this.cx = c; this.cy = r; }
+      print(v, f) {
+        if (!this.buf) return 0;
+        const s = fmtNum(v, f);
+        for (const ch of s) { if (this.cx < this.cols && this.cy < this.rows) { const code = ch.charCodeAt(0); this.buf[this.cy * this.cols + this.cx] = code < 256 ? code : 63; } this.cx++; }
+        this._push(); return s.length;
+      }
+      println(v, f) { return this.print(v, f); }
+      write(c) { return this.print(typeof c === 'number' ? (c < 8 ? 'ÿ' : String.fromCharCode(c)) : c); }
+      backlight() { if (this.p) el(this.p).backlight = true; } noBacklight() { if (this.p) el(this.p).backlight = false; }
+      setBacklight(v) { if (this.p) el(this.p).backlight = !!v; }
+      cursor() { if (this.p) { const e = el(this.p); e.cursor = true; e.cursorX = this.cx; e.cursorY = this.cy; } } noCursor() { if (this.p) el(this.p).cursor = false; }
+      blink() { if (this.p) { const e = el(this.p); e.blink = true; e.cursorX = this.cx; e.cursorY = this.cy; } } noBlink() { if (this.p) el(this.p).blink = false; }
+      display() { if (this.p) el(this.p).backlight = true; } noDisplay() { if (this.p) { this.saved = this.buf.slice(); el(this.p).characters = new Uint8Array(this.buf.length).fill(32); } }
+      createChar() { } scrollDisplayLeft() { } scrollDisplayRight() { } leftToRight() { } rightToLeft() { } autoscroll() { } noAutoscroll() { }
+    }
+    env.LiquidCrystal_I2C = LCD;
+    env.LiquidCrystal = class extends LCD { constructor() { super(0, 16, 2); } };
+
+    // --- Adafruit GFX family (SSD1306 / ILI9341)
+    class GFX {
+      constructor(w, h) { this.W = w; this.H = h; this.cx = 0; this.cy = 0; this.size = 1; this.fg = 1; this.bg = null; this.wrap = true; this.rot = 0; }
+      _col(c) { return '#fff'; }
+      width() { return this.rot % 2 ? this.H : this.W; } height() { return this.rot % 2 ? this.W : this.H; }
+      setCursor(x, y) { this.cx = x; this.cy = y; } getCursorX() { return this.cx; } getCursorY() { return this.cy; }
+      setTextSize(s) { this.size = Math.max(1, Math.round(s)); } setTextColor(c, bg) { this.fg = c; this.bg = bg === undefined ? null : bg; } setTextWrap(w) { this.wrap = !!w; }
+      setFont() { } cp437() { } setRotation(r) { this.rot = r & 3; this._applyRot && this._applyRot(); } getRotation() { return this.rot; }
+      fillScreen(c) { const x = this.ctx; x.fillStyle = this._col(c); x.fillRect(0, 0, this.width(), this.height()); this._dirty(); }
+      drawPixel(a, b, c) { const x = this.ctx; x.fillStyle = this._col(c); x.fillRect(Math.round(a), Math.round(b), 1, 1); this._dirty(); }
+      fillRect(a, b, w, h, c) { const x = this.ctx; x.fillStyle = this._col(c); x.fillRect(a, b, w, h); this._dirty(); }
+      drawRect(a, b, w, h, c) { this.fillRect(a, b, w, 1, c); this.fillRect(a, b + h - 1, w, 1, c); this.fillRect(a, b, 1, h, c); this.fillRect(a + w - 1, b, 1, h, c); }
+      drawFastHLine(a, b, w, c) { this.fillRect(a, b, w, 1, c); } drawFastVLine(a, b, h, c) { this.fillRect(a, b, 1, h, c); }
+      drawLine(x0, y0, x1, y1, c) {
+        let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1, er = dx + dy, n = 0;
+        this.ctx.fillStyle = this._col(c);
+        for (; ;) { this.ctx.fillRect(x0, y0, 1, 1); if ((x0 === x1 && y0 === y1) || ++n > 5000) break; const e2 = 2 * er; if (e2 >= dy) { er += dy; x0 += sx; } if (e2 <= dx) { er += dx; y0 += sy; } }
+        this._dirty();
+      }
+      _circle(x, y, r, c, fill) { const k = this.ctx; k.beginPath(); k.arc(x + 0.5, y + 0.5, r, 0, Math.PI * 2); if (fill) { k.fillStyle = this._col(c); k.fill(); } else { k.strokeStyle = this._col(c); k.lineWidth = 1; k.stroke(); } this._dirty(); }
+      drawCircle(x, y, r, c) { this._circle(x, y, r, c, false); } fillCircle(x, y, r, c) { this._circle(x, y, r, c, true); }
+      _rr(x, y, w, h, r, c, fill) { const k = this.ctx; k.beginPath(); k.roundRect ? k.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, r) : k.rect(x, y, w, h); if (fill) { k.fillStyle = this._col(c); k.fill(); } else { k.strokeStyle = this._col(c); k.stroke(); } this._dirty(); }
+      drawRoundRect(x, y, w, h, r, c) { this._rr(x, y, w, h, r, c, false); } fillRoundRect(x, y, w, h, r, c) { this._rr(x, y, w, h, r, c, true); }
+      _tri(a, b, c2, d, e2, f, c, fill) { const k = this.ctx; k.beginPath(); k.moveTo(a, b); k.lineTo(c2, d); k.lineTo(e2, f); k.closePath(); if (fill) { k.fillStyle = this._col(c); k.fill(); } else { k.strokeStyle = this._col(c); k.stroke(); } this._dirty(); }
+      drawTriangle(a, b, c2, d, e2, f, c) { this._tri(a, b, c2, d, e2, f, c, false); } fillTriangle(a, b, c2, d, e2, f, c) { this._tri(a, b, c2, d, e2, f, c, true); }
+      drawBitmap(x, y, bmp, w, h, c) { const bw = Math.ceil(w / 8); for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (bmp[j * bw + (i >> 3)] & (128 >> (i & 7))) this.ctx.fillStyle = this._col(c), this.ctx.fillRect(x + i, y + j, 1, 1); this._dirty(); }
+      print(v, f) {
+        const s = fmtNum(v, f), k = this.ctx, cw = 6 * this.size, ch = 8 * this.size;
+        k.font = `${7 * this.size}px "Courier New",monospace`; k.textBaseline = 'top';
+        for (const c of s) {
+          if (c === '\n') { this.cx = 0; this.cy += ch; continue; }
+          if (c === '\r') continue;
+          if (this.wrap && this.cx + cw > this.width()) { this.cx = 0; this.cy += ch; }
+          if (this.bg !== null) { k.fillStyle = this._col(this.bg); k.fillRect(this.cx, this.cy, cw, ch); }
+          k.fillStyle = this._col(this.fg); k.fillText(c, this.cx, this.cy + this.size * 0.5, cw);
+          this.cx += cw;
+        }
+        this._dirty(); return s.length;
+      }
+      println(v, f) { const n = this.print(v === undefined ? '' : v, f); this.cx = 0; this.cy += 8 * this.size; return n; }
+      write(c) { return this.print(typeof c === 'number' ? String.fromCharCode(c) : c); }
+      printf(fmt, ...a) { return this.print(sprintf(fmt, ...a)); }
+      getTextBounds(str, x, y) { return { w: String(str).length * 6 * this.size, h: 8 * this.size }; }
+      color565(r, g, b) { return ((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3); }
+      _dirty() { }
+    }
+    env.Adafruit_SSD1306 = class extends GFX {
+      constructor(w = 128, h = 64) { super(typeof w === 'number' ? w : 128, typeof h === 'number' ? h : 64); this.cv = document.createElement('canvas'); this.cv.width = 128; this.cv.height = 64; this.ctx = this.cv.getContext('2d'); this.inv = false; }
+      begin() {
+        this.p = partsOfKind(['oled'])[0];
+        if (!this.p) { warn('oled', 'ไม่พบจอ OLED ในวงจร'); return false; }
+        if (!busOk(this.p, ['DATA', 'CLK'])) { warn('oledbus', 'จอ OLED ยังไม่ได้ต่อไฟหรือสาย SDA/SCL'); return false; }
+        this.ctx.fillStyle = '#000'; this.ctx.fillRect(0, 0, 128, 64); return true;
+      }
+      _col(c) { return c === 2 ? '#808080' : c ? '#fff' : '#000'; }
+      clearDisplay() { this.ctx.fillStyle = '#000'; this.ctx.fillRect(0, 0, 128, 64); }
+      invertDisplay(i) { this.inv = !!i; this.display(); }
+      dim() { } ssd1306_command() { } startscrollright() { } stopscroll() { }
+      display() {
+        if (!this.p) return; const e = el(this.p); if (!e || !e.imageData) return;
+        const src = this.ctx.getImageData(0, 0, 128, 64).data, dst = e.imageData.data;
+        for (let i = 0; i < 128 * 64; i++) { let on = src[i * 4] > 100; if (this.inv) on = !on; const v = on ? 255 : 0; dst[i * 4] = dst[i * 4 + 1] = dst[i * 4 + 2] = v; dst[i * 4 + 3] = 255; }
+        e.redraw && e.redraw();
+      }
+    };
+    env.Adafruit_ILI9341 = class extends GFX {
+      constructor() { super(240, 320); }
+      begin() {
+        this.p = partsOfKind(['tft'])[0];
+        if (!this.p) { warn('tft', 'ไม่พบจอ ILI9341 ในวงจร'); return; }
+        if (!busOk(this.p, ['CS', 'D/C', 'MOSI', 'SCK'])) { warn('tftbus', 'จอ ILI9341 ยังไม่ได้ต่อไฟหรือสาย SPI ครบ (CS, D/C, MOSI, SCK)'); this.p = null; return; }
+        const cv = el(this.p).canvas; this.ctx = cv ? cv.getContext('2d') : document.createElement('canvas').getContext('2d');
+        this._applyRot(); this.fillScreen(0);
+      }
+      _applyRot() { if (!this.ctx) return; const k = this.ctx; k.setTransform(1, 0, 0, 1, 0, 0); if (this.rot === 1) k.setTransform(0, 1, -1, 0, 240, 0); else if (this.rot === 2) k.setTransform(-1, 0, 0, -1, 240, 320); else if (this.rot === 3) k.setTransform(0, -1, 1, 0, 0, 320); }
+      _col(c) { c = c | 0; const r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31; return `rgb(${r * 255 / 31 | 0},${g * 255 / 63 | 0},${b * 255 / 31 | 0})`; }
+      fillScreen(c) { if (!this.ctx) return; const k = this.ctx; k.save(); k.setTransform(1, 0, 0, 1, 0, 0); k.fillStyle = this._col(c); k.fillRect(0, 0, 240, 320); k.restore(); }
+      print(v, f) { if (!this.ctx) return 0; return super.print(v, f); }
+      fillRect(...a) { if (this.ctx) super.fillRect(...a); } drawPixel(...a) { if (this.ctx) super.drawPixel(...a); }
+      readID() { return 0x9341; } invertDisplay() { } setAddrWindow() { } startWrite() { } endWrite() { }
+    };
+    env.Adafruit_ILI9341.prototype.ctx = null;
+
+    // --- NeoPixel
+    env.Adafruit_NeoPixel = class {
+      constructor(n, pin, type) { this.n = n || 1; this.pin = toGpio(pin); this.buf = Array.from({ length: this.n }, () => [0, 0, 0]); this.bright = 255; }
+      begin() { this.p = findPart(['pixels'], 'DIN', this.pin); if (!this.p) warn('np' + this.pin, `ไม่พบ NeoPixel ที่ต่อกับขา ${this.pin}`); }
+      static Color(r, g, b) { return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255); }
+      Color(r, g, b) { return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255); }
+      static ColorHSV(h, s = 255, v = 255) { h = (h % 65536) / 65536 * 6; const i = Math.floor(h), f = h - i, p = v * (1 - s / 255), q = v * (1 - s / 255 * f), t = v * (1 - s / 255 * (1 - f)); const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6]; return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255); }
+      ColorHSV(h, s, v) { return env.Adafruit_NeoPixel.ColorHSV(h, s, v); }
+      static gamma32(c) { return c; } gamma32(c) { return c; }
+      setPixelColor(i, r, g, b) { if (i < 0 || i >= this.n) return; if (g === undefined) { const c = r >>> 0; this.buf[i] = [(c >> 16) & 255, (c >> 8) & 255, c & 255]; } else this.buf[i] = [r, g, b]; }
+      getPixelColor(i) { const [r, g, b] = this.buf[i] || [0, 0, 0]; return (r << 16) | (g << 8) | b; }
+      fill(c = 0, first = 0, count) { const end = count ? first + count : this.n; for (let i = first; i < end; i++) this.setPixelColor(i, c); }
+      clear() { this.buf.forEach((x) => { x[0] = x[1] = x[2] = 0; }); }
+      setBrightness(b) { this.bright = clamp(b, 0, 255); } getBrightness() { return this.bright; }
+      numPixels() { return this.n; } canShow() { return true; } updateLength(n) { this.n = n; }
+      show() {
+        const p = this.p; if (!p || !powered(p)) return; const e = el(p), k = this.bright / 255;
+        const rgb = (i) => { const [r, g, b] = this.buf[i] || [0, 0, 0]; return { r: r / 255 * k, g: g / 255 * k, b: b / 255 * k }; };
+        if (p.type === 'neopixel') { const c = rgb(0); e.r = c.r; e.g = c.g; e.b = c.b; }
+        else if (p.type === 'led-ring') { for (let i = 0; i < Math.min(this.n, e.pixels); i++) e.setPixel(i, rgb(i)); }
+        else { const cols = e.cols || 8; for (let i = 0; i < Math.min(this.n, cols * (e.rows || 8)); i++) e.setPixel(Math.floor(i / cols), i % cols, rgb(i)); }
+      }
+    };
+
+    // --- MPU6050
+    env.sensors_event_t = class { constructor() { this.acceleration = { x: 0, y: 0, z: 0 }; this.gyro = { x: 0, y: 0, z: 0 }; this.temperature = 0; } };
+    env.Adafruit_MPU6050 = class {
+      begin() { this.p = partsOfKind(['mpu'])[0]; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); }
+      setAccelerometerRange() { } setGyroRange() { } setFilterBandwidth() { } getAccelerometerRange() { return 2; } getGyroRange() { return 1; } getFilterBandwidth() { return 5; }
+      setMotionDetectionThreshold() { } setMotionDetectionDuration() { } setInterruptPinLatch() { } setInterruptPinPolarity() { } setMotionInterrupt() { }
+      getMotionInterruptStatus() { const s = this.p && this.p.sim; return !!(s && (Math.abs(s.ax) + Math.abs(s.ay) > 2)); }
+      getEvent(a, g, t) {
+        const s = this.p ? this.p.sim : { ax: 0, ay: 0, az: 0, gx: 0, gy: 0, gz: 0, temp: 0 }, r = Math.PI / 180;
+        if (a) a.acceleration = { x: s.ax, y: s.ay, z: s.az };
+        if (g) g.gyro = { x: s.gx * r, y: s.gy * r, z: s.gz * r };
+        if (t) t.temperature = s.temp;
+        return true;
+      }
+    };
+
+    // --- HX711
+    env.HX711 = class {
+      constructor() { this.scale = 1; this.offset = 0; }
+      begin(dt, sck) { this.dt = toGpio(dt); this.p = findPart(['hx711'], 'DT', this.dt); if (!this.p) warn('hx', 'ไม่พบโมดูล HX711 ที่ต่อกับขา DT'); }
+      _raw() { if (!this.p || !powered(this.p)) return 0; return Math.round(this.p.sim.weight * 420 + 84000); }
+      is_ready() { return !!this.p; } wait_ready() { } power_up() { } power_down() { } set_gain() { }
+      read() { return this._raw(); } read_average() { return this._raw(); }
+      get_value() { return this._raw() - this.offset; } get_units() { return (this._raw() - this.offset) / this.scale; }
+      tare() { this.offset = this._raw(); } set_scale(s = 1) { this.scale = s || 1; } get_scale() { return this.scale; } set_offset(o) { this.offset = o; } get_offset() { return this.offset; }
+    };
+
+    // --- RFID MFRC522
+    env.MFRC522 = class {
+      constructor(ss, rst) { this.ss = toGpio(ss); this.uid = { uidByte: [], size: 0, sak: 8 }; this.seen = 0; }
+      PCD_Init() { this.p = findPart(['rfid'], 'SDA', this.ss); if (!this.p) warn('rfid', 'ไม่พบโมดูล RFID RC522 (ขา SDA/SS ต้องตรงกับในโค้ด)'); else if (!busOk(this.p, ['SDA', 'SCK', 'MOSI', 'MISO'])) { warn('rfidbus', 'RC522 ยังไม่ได้ต่อไฟหรือสาย SPI ครบ'); this.p = null; } else this.seen = this.p.sim.tap || 0; }
+      PCD_DumpVersionToSerial() { serialWrite('Firmware Version: 0x92 = v2.0\n'); } PCD_SetAntennaGain() { } PCD_PerformSelfTest() { return true; }
+      PICC_IsNewCardPresent() { return !!(this.p && (this.p.sim.tap || 0) > this.seen); }
+      PICC_ReadCardSerial() {
+        if (!this.p || !((this.p.sim.tap || 0) > this.seen)) return false;
+        this.seen = this.p.sim.tap;
+        const bytes = String(this.p.sim.uid || 'DE AD BE EF').trim().split(/[\s:]+/).map((h) => parseInt(h, 16) & 255).filter((n) => !Number.isNaN(n));
+        this.uid = { uidByte: bytes, size: bytes.length, sak: 8 };
+        return true;
+      }
+      PICC_HaltA() { } PCD_StopCrypto1() { } PICC_GetType() { return 4; } PICC_GetTypeName() { return 'MIFARE 1KB'; }
+      PICC_DumpToSerial() { serialWrite('Card UID: ' + this.uid.uidByte.map((b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ') + '\n'); }
+    };
+
+    // --- GPS
+    env.TinyGPSPlus = class {
+      constructor() {
+        const g = () => partsOfKind(['gps'])[0]; const ok = () => { const p = g(); return !!(p && powered(p) && p.sim.sats >= 3); };
+        this._chars = 0; this._upd = false; const self = this;
+        this.location = { isValid: ok, isUpdated() { const u = self._upd; self._upd = false; return u && ok(); }, lat: () => (g() ? g().sim.lat : 0), lng: () => (g() ? g().sim.lng : 0), age: () => 100 };
+        this.satellites = { value: () => (g() ? g().sim.sats : 0), isValid: () => !!g(), isUpdated: () => true };
+        this.altitude = { meters: () => 12.5, kilometers: () => 0.0125, feet: () => 41, isValid: ok };
+        this.speed = { kmph: () => 0, mps: () => 0, knots: () => 0, mph: () => 0, isValid: ok };
+        this.course = { deg: () => 0, isValid: ok };
+        this.hdop = { hdop: () => 0.9, value: () => 90, isValid: ok };
+        const now = () => new Date();
+        this.date = { isValid: ok, isUpdated: () => true, year: () => now().getUTCFullYear(), month: () => now().getUTCMonth() + 1, day: () => now().getUTCDate(), value: () => 0 };
+        this.time = { isValid: ok, isUpdated: () => true, hour: () => now().getUTCHours(), minute: () => now().getUTCMinutes(), second: () => now().getUTCSeconds(), centisecond: () => 0, value: () => 0 };
+      }
+      encode(c) { this._chars++; if (c === '\n') { this._upd = true; return true; } return false; }
+      charsProcessed() { return this._chars; } sentencesWithFix() { return Math.floor(this._chars / 70); } failedChecksum() { return 0; }
+      static distanceBetween(la1, lo1, la2, lo2) { const R = 6372795, r = Math.PI / 180, dl = (lo2 - lo1) * r, a = Math.sin((la2 - la1) * r / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(dl / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(a)); }
+      static courseTo(la1, lo1, la2, lo2) { const r = Math.PI / 180, dl = (lo2 - lo1) * r, y = Math.sin(dl) * Math.cos(la2 * r), x = Math.cos(la1 * r) * Math.sin(la2 * r) - Math.sin(la1 * r) * Math.cos(la2 * r) * Math.cos(dl); return (Math.atan2(y, x) / r + 360) % 360; }
+    };
+
+    // --- LoRa (sandeepmistry/arduino-LoRa API)
+    env.LoRa = {
+      freq: 433e6, pkt: '', rx: null, cb: null,
+      setPins() { }, setSPI() { }, setSPIFrequency() { }, setSyncWord() { }, setSpreadingFactor() { }, setSignalBandwidth() { }, setCodingRate4() { }, setTxPower() { }, enableCrc() { }, disableCrc() { }, setPreambleLength() { }, idle() { }, sleep() { }, receive() { }, explicitHeaderMode() { }, implicitHeaderMode() { },
+      begin(f) {
+        this.freq = f; const p = partsOfKind(['lora'])[0]; this.p = p;
+        if (!p) { warn('lora', 'ไม่พบโมดูล LoRa SX1278 ในวงจร'); return 0; }
+        if (!busOk(p, ['NSS', 'SCK', 'MOSI', 'MISO'])) { warn('lorabus', 'LoRa ยังไม่ได้ต่อไฟหรือสาย SPI ครบ (NSS, SCK, MOSI, MISO)'); return 0; }
+        return 1;
+      },
+      end() { }, beginPacket() { this.pkt = ''; return 1; },
+      print(v, f) { this.pkt += fmtNum(v, f); return 1; }, println(v, f) { this.pkt += (v === undefined ? '' : fmtNum(v, f)) + '\n'; return 1; },
+      write(v) { this.pkt += typeof v === 'number' ? String.fromCharCode(v) : String(v); return 1; },
+      endPacket() { if (!this.p) return 0; IOTF.iot.loraSend(this.pkt, this.freq); const led = el(this.p).q('.tx'); if (led) { led.setAttribute('fill', '#ff3b30'); setTimeout(() => led.setAttribute('fill', '#3b1111'), 150); } return 1; },
+      parsePacket() { if (!this.p || !sim.loraRx.length) return 0; this.rx = sim.loraRx.shift(); this.rxi = 0; return this.rx.text.length; },
+      available() { return this.rx ? this.rx.text.length - this.rxi : 0; },
+      read() { if (!this.rx || this.rxi >= this.rx.text.length) return -1; return this.rx.text[this.rxi++]; },
+      peek() { return this.rx ? this.rx.text[this.rxi] : -1; },
+      readString() { if (!this.rx) return ''; const s = this.rx.text.slice(this.rxi); this.rxi = this.rx.text.length; return s; },
+      packetRssi() { return this.rx ? this.rx.rssi : 0; }, packetSnr() { return 9.5; }, packetFrequencyError() { return 0; },
+      onReceive(fn) { this.cb = fn; }, onTxDone() { }
+    };
+    sim.loraHook = () => { const L = env.LoRa; if (L.cb && sim.loraRx.length && L.p) { const n = L.parsePacket(); if (n) safeCall(() => L.cb(n)); } };
+
+    // --- RTC
+    class DateTime {
+      constructor(a, mo, d, h = 0, mi = 0, s = 0) {
+        if (a === undefined) this.t = Date.now() / 1000;
+        else if (typeof a === 'string') { const dt = new Date(a + ' ' + (mo || '00:00:00')); this.t = (dt.getTime() - dt.getTimezoneOffset() * 60000) / 1000; }
+        else if (a instanceof DateTime) this.t = a.t;
+        else if (mo === undefined) this.t = a;
+        else this.t = Date.UTC(a, mo - 1, d, h, mi, s) / 1000;
+      }
+      _d() { return new Date(this.t * 1000); }
+      year() { return this._d().getUTCFullYear(); } month() { return this._d().getUTCMonth() + 1; } day() { return this._d().getUTCDate(); }
+      hour() { return this._d().getUTCHours(); } minute() { return this._d().getUTCMinutes(); } second() { return this._d().getUTCSeconds(); }
+      dayOfTheWeek() { return this._d().getUTCDay(); } unixtime() { return Math.floor(this.t); } secondstime() { return Math.floor(this.t) - 946684800; }
+      timestamp() { return this._d().toISOString().slice(0, 19); } isValid() { return true; }
+      toString(f) { return String(f || 'YYYY-MM-DD hh:mm:ss').replace('YYYY', this.year()).replace('MM', String(this.month()).padStart(2, '0')).replace('DD', String(this.day()).padStart(2, '0')).replace('hh', String(this.hour()).padStart(2, '0')).replace('mm', String(this.minute()).padStart(2, '0')).replace('ss', String(this.second()).padStart(2, '0')); }
+    }
+    env.DateTime = DateTime;
+    env.TimeSpan = class { constructor(d = 0, h = 0, m = 0, s = 0) { this.s = d * 86400 + h * 3600 + m * 60 + s; } totalseconds() { return this.s; } };
+    const localOffset = -new Date().getTimezoneOffset() * 60;
+    class RTC { begin() { this.p = partsOfKind(['rtc'])[0]; this.off = sim.rtcOffset ?? localOffset; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); } isrunning() { return true; } lostPower() { return false; } adjust(dt) { this.off = dt.t - Date.now() / 1000; sim.rtcOffset = this.off; } now() { return new DateTime(Date.now() / 1000 + this.off); } }
+    env.RTC_DS1307 = RTC; env.RTC_DS3231 = class extends RTC { getTemperature() { return 26.5; } };
+
+    // --- SD card
+    class File {
+      constructor(name, mode) { this.nm = name; this.mode = mode; this.pos = 0; if (mode === 1 || mode === 2) { if (!(name in sim.sd)) sim.sd[name] = ''; } }
+      print(v, f) { const s = fmtNum(v, f); sim.sd[this.nm] += s; showSd(); return s.length; }
+      println(v, f) { return this.print((v === undefined ? '' : fmtNum(v, f)) + '\n'); }
+      write(v) { return this.print(typeof v === 'number' ? String.fromCharCode(v) : v); }
+      available() { return (sim.sd[this.nm] || '').length - this.pos; }
+      read() { const s = sim.sd[this.nm] || ''; return this.pos < s.length ? s[this.pos++] : -1; }
+      peek() { const s = sim.sd[this.nm] || ''; return this.pos < s.length ? s[this.pos] : -1; }
+      readStringUntil(c) { const s = (sim.sd[this.nm] || '').slice(this.pos); const i = s.indexOf(c); const r = i < 0 ? s : s.slice(0, i); this.pos += r.length + (i < 0 ? 0 : 1); return r; }
+      readString() { const s = (sim.sd[this.nm] || '').slice(this.pos); this.pos += s.length; return s; }
+      size() { return (sim.sd[this.nm] || '').length; } name() { return this.nm; } close() { } flush() { } seek(p) { this.pos = p; return true; } position() { return this.pos; }
+      isDirectory() { return false; }
+    }
+    env.File = File;
+    env.SD = {
+      ok: false,
+      begin() { const p = partsOfKind(['sd'])[0]; this.ok = !!(p && busOk(p, ['CS', 'SCK', 'DI', 'DO'])); if (!p) warn('sd', 'ไม่พบโมดูล microSD ในวงจร'); return this.ok; },
+      open(name, mode = 0) { if (!this.ok) return null; name = String(name).replace(/^\//, ''); if (mode === 0 && !(name in sim.sd)) return null; return new File(name, mode); },
+      exists(name) { return String(name).replace(/^\//, '') in sim.sd; }, remove(name) { delete sim.sd[String(name).replace(/^\//, '')]; showSd(); return true; },
+      mkdir() { return true; }, rmdir() { return true; }, cardType() { return 2; }, cardSize() { return 8 * 1024 ** 3; }
+    };
+
+    // --- Keypad
+    env.Keypad = class {
+      constructor(map, rows, cols) { this.p = partsOfKind(['keypad'])[0]; if (!this.p) warn('kp', 'ไม่พบ Keypad ในวงจร'); else if (!ed.isBasic() && !sim.nets.gpiosOn(netOf(this.p, 'R1')).length) { warn('kpw', 'Keypad ยังไม่ได้ต่อสายแถว/คอลัมน์เข้าบอร์ด'); this.p = null; } }
+      getKey() { if (!this.p) return ''; const q = st(this.p); const k = q.key || ''; q.key = ''; return k; }
+      async waitForKey() { for (; ;) { const k = this.getKey(); if (k) return k; await env.delay(10); } }
+      getState() { return 0; } isPressed(k) { return false; } keyStateChanged() { return false; } setDebounceTime() { } setHoldTime() { } addEventListener() { }
+    };
+
+    // --- Stepper
+    env.Stepper = class {
+      constructor(steps) { this.steps = steps || 200; this.rpm = 10; this.p = partsOfKind(['stepper'])[0]; this.angle = 0; }
+      setSpeed(r) { this.rpm = r || 1; }
+      async step(n) {
+        const ms = Math.abs(n) * 60000 / (this.steps * this.rpm), e = this.p && el(this.p), dir = Math.sign(n), each = 360 / this.steps;
+        const t0 = performance.now(), a0 = this.angle;
+        while (true) {
+          const k = Math.min(1, (performance.now() - t0) / Math.max(1, ms));
+          this.angle = a0 + dir * Math.abs(n) * each * k;
+          if (e && powered(this.p)) e.angle = ((this.angle % 360) + 360) % 360;
+          if (k >= 1) break; await env.delay(16);
+        }
+      }
+    };
+
+    // --- IR remote (IRremote v3+ and v2 API)
+    const ir = { q: [] };
+    sim.irPush = (code) => ir.q.push(code);
+    env.IrReceiver = {
+      decodedIRData: { command: 0, address: 0, protocol: 8, decodedRawData: 0, flags: 0 },
+      begin(pin) { this.p = partsOfKind(['irrecv'])[0]; if (!this.p) warn('ir', 'ไม่พบ IR Receiver ในวงจร'); },
+      start() { }, enableIRIn() { },
+      decode() { if (!this.p || !powered(this.p) || !ir.q.length) return false; const c = ir.q.shift(); this.decodedIRData = { command: c, address: 0, protocol: 8, decodedRawData: (((~c) & 255) << 24) | (c << 16) | 0xff00, flags: 0 }; return true; },
+      resume() { }, printIRResultShort() { serialWrite(`Protocol=NEC Address=0x0 Command=0x${this.decodedIRData.command.toString(16).toUpperCase()}\n`); }
+    };
+    env.decode_results = class { constructor() { this.value = 0; this.decode_type = 3; this.bits = 32; } };
+    env.IRrecv = class { constructor() { } enableIRIn() { env.IrReceiver.begin(); } decode(r) { if (!env.IrReceiver.decode()) return false; const c = env.IrReceiver.decodedIRData.command; if (r) r.value = (0x00ff << 16) | (c << 8) | ((~c) & 255); return true; } resume() { } };
+
+    // unknown ALL_CAPS constants resolve to 0 (with a warning) so library flags don't crash the sketch
+    return new Proxy(env, {
+      has(t, k) { if (typeof k !== 'string') return false; if (k in t) return true; if (/^[A-Z][A-Z0-9_]{2,}$/.test(k) && !(k in window)) { warn('k' + k, `ไม่รู้จักค่าคงที่ ${k} ใช้ค่า 0 แทน`); t[k] = 0; return true; } return false; },
+      get(t, k) { return t[k]; }
+    });
+  }
+
+  function nmea(s) {
+    const pad = (n, w) => String(n).padStart(w, '0');
+    const dm = (v, lat) => { const a = Math.abs(v), d = Math.floor(a), m = (a - d) * 60; return (lat ? pad(d, 2) : pad(d, 3)) + m.toFixed(4).padStart(7, '0') + ',' + (lat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W')); };
+    const now = new Date(), t = pad(now.getUTCHours(), 2) + pad(now.getUTCMinutes(), 2) + pad(now.getUTCSeconds(), 2) + '.00';
+    const fix = s.sats >= 3;
+    const cs = (b) => { let x = 0; for (const c of b) x ^= c.charCodeAt(0); return '$' + b + '*' + x.toString(16).toUpperCase().padStart(2, '0') + '\r\n'; };
+    const gga = `GPGGA,${t},${dm(s.lat, 1)},${dm(s.lng, 0)},${fix ? 1 : 0},${pad(s.sats, 2)},0.9,12.5,M,-28.0,M,,`;
+    const date = pad(now.getUTCDate(), 2) + pad(now.getUTCMonth() + 1, 2) + String(now.getUTCFullYear()).slice(2);
+    const rmc = `GPRMC,${t},${fix ? 'A' : 'V'},${dm(s.lat, 1)},${dm(s.lng, 0)},0.00,0.00,${date},,,A`;
+    return cs(gga) + cs(rmc);
+  }
+
+  function showSd() {
+    const o = document.getElementById('sdOut');
+    const names = Object.keys(sim.sd);
+    o.textContent = names.length ? names.map((n) => `${n}  (${sim.sd[n].length} ไบต์)\n${sim.sd[n].slice(-2000)}`).join('\n\n') : 'ยังไม่มีไฟล์';
+    ed.project.sdFiles = sim.sd;
+  }
+
+  /* ---------- part events (buttons on the canvas etc.) ---------- */
+  function hookEvents() {
+    ed.project.parts.forEach((p) => {
+      const d = P[p.type], e = el(p); if (!e) return;
+      const on = (ev, fn) => { e.addEventListener(ev, fn); sim.listeners.push(() => e.removeEventListener(ev, fn)); };
+      if (d.kind === 'button') { on('button-press', () => { st(p).pressed = true; }); on('button-release', () => { st(p).pressed = false; }); }
+      if (d.kind === 'keypad') on('button-press', (ev) => { st(p).key = ev.detail && ev.detail.key; });
+      if (d.kind === 'irremote') on('button-press', (ev) => { if (ev.detail && ev.detail.irCode !== undefined) sim.irPush(ev.detail.irCode); });
+      if (d.kind === 'encoder') {
+        const pulse = (cw) => { const q = st(p); if (cw) { q.clk = 0; q.dt = 1; } else { q.dt = 0; setTimeout(() => { q.clk = 0; }, 8); } setTimeout(() => { q.clk = 1; q.dt = 1; }, 40); };
+        on('rotate-cw', () => pulse(true)); on('rotate-ccw', () => pulse(false));
+      }
+      if (d.kind === 'dialer') on('dial', async (ev) => {
+        const q = st(p), n = (ev.detail && ev.detail.digit) || 10;
+        q.dial = 0; for (let i = 0; i < (n === 0 ? 10 : n); i++) { q.pulse = 0; await sleep(40); q.pulse = 1; await sleep(60); } q.dial = 1;
+      });
+    });
+  }
+  sim.event = function (kind, p) {
+    if (kind === 'rfid') { const c = el(p).q('.card'); if (c) { c.setAttribute('opacity', '0.85'); setTimeout(() => c.setAttribute('opacity', '0'), 900); } }
+  };
+
+  /* ---------- program loading ---------- */
+  function loadProgram(code) {
+    return new Promise((resolve, reject) => {
+      const src = 'window.__iotfProgram = async function (__env) { with (__env) {\n' + code + '\nreturn { setup: typeof setup === "function" ? setup : null, loop: typeof loop === "function" ? loop : null }; } };';
+      const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      const s = document.createElement('script');
+      let synErr = null;
+      const onErr = (ev) => { if (ev.filename === url) { synErr = { msg: ev.message, line: ev.lineno - 1 }; ev.preventDefault(); } };
+      window.addEventListener('error', onErr);
+      window.__iotfProgram = null;
+      s.src = url;
+      s.onload = () => { window.removeEventListener('error', onErr); URL.revokeObjectURL(url); s.remove(); if (synErr || !window.__iotfProgram) reject(Object.assign(new Error(synErr ? synErr.msg : 'โหลดโปรแกรมไม่สำเร็จ'), { line: synErr && synErr.line, syntax: true })); else resolve(window.__iotfProgram); };
+      s.onerror = () => { window.removeEventListener('error', onErr); reject(new Error('โหลดโปรแกรมไม่สำเร็จ')); };
+      sim.blobUrl = url;
+      document.head.appendChild(s);
+    });
+  }
+  function errLine(e) {
+    if (e.line) return e.line;
+    const m = /blob:[^\s)]*?:(\d+):\d+/.exec(e.stack || '');
+    return m ? +m[1] - 1 : null;
+  }
+  function explain(e) {
+    const msg = String(e.message || e);
+    let m;
+    if ((m = /^(\w+) is not defined/.exec(msg))) return `ไม่รู้จัก "${m[1]}" (พิมพ์ผิด ยังไม่ได้ประกาศตัวแปร หรือคำสั่งนี้ยังไม่รองรับในตัวจำลอง)`;
+    if ((m = /(\S+) is not a function/.exec(msg))) return `"${m[1]}" เรียกใช้เป็นฟังก์ชันไม่ได้ (ไลบรารีอาจยังไม่รองรับคำสั่งนี้)`;
+    if (/Cannot read properties of (null|undefined)/.test(msg)) return 'อ่านค่าจากออบเจกต์ที่ยังไม่ได้สร้าง/ไม่พบอุปกรณ์ (' + msg + ')';
+    if (/Unexpected token|Unexpected identifier|missing \)|Invalid or unexpected/.test(msg)) return 'รูปแบบโค้ดผิด (syntax) — ตรวจวงเล็บ ; และชนิดตัวแปร (' + msg + ')';
+    if (/Assignment to constant/.test(msg)) return 'แก้ค่าของค่าคงที่ (#define / const) ไม่ได้';
+    return msg;
+  }
+  function onError(e) {
+    if (e === STOP) return;
+    const line = errLine(e);
+    serialWrite(`\n✖ ${line ? 'บรรทัด ' + line + ': ' : ''}${explain(e)}\n`, 'serr');
+    if (line && IOTF.app) IOTF.app.markError(line);
+    sim.stop(true);
+  }
+
+  sim.start = async function (src) {
+    sim.stop(true);
+    const gen = ++sim.gen; sim.curGen = gen;
+    sim.out = {}; sim.tones = {}; sim.ints = []; sim.partState = {}; sim.memo = {}; sim.warnOnce = new Set(); sim.pinModeHint = new Set(); sim.loraRx = []; sim.serialIn = '';
+    sim.sd = Object.assign({}, ed.project.sdFiles || {}); showSd();
+    sim.nets = ed.nets(); sim.t0 = performance.now();
+    if (!ed.board()) { serialWrite('✖ ยังไม่มีบอร์ดในวงจร\n', 'serr'); return false; }
+    let t;
+    try { t = IOTF.transpile(src); } catch (e) { serialWrite(`✖ ${e.line ? 'บรรทัด ' + e.line + ': ' : ''}${e.message}\n`, 'serr'); if (e.line && IOTF.app) IOTF.app.markError(e.line); return false; }
+    let fn;
+    try { fn = await loadProgram(t.code); } catch (e) { serialWrite(`✖ ${e.line ? 'บรรทัด ' + e.line + ': ' : ''}${explain(e)}\n`, 'serr'); if (e.line && IOTF.app) IOTF.app.markError(e.line); return false; }
+    if (gen !== sim.gen) return false;
+    sim.running = true; ed.setRunning(true);
+    IOTF.iot.onRun(true);
+    hookEvents();
+    const tick = () => { if (!sim.running || gen !== sim.gen) return; refresh(); sim.loraHook && sim.loraHook(); sim.raf = requestAnimationFrame(tick); };
+    sim.raf = requestAnimationFrame(tick);
+    sim.intTimer = setInterval(() => { if (sim.running && sim.ints.length) refreshInts(); }, 3);
+    serialWrite(`— เริ่มจำลอง ${ed.boardDef().name} —\n`, 'sinfo');
+    (async () => {
+      try {
+        const env = makeEnv();
+        const prog = await fn(env);
+        if (!prog.setup || !prog.loop) throw Object.assign(new Error('โปรแกรมต้องมีฟังก์ชัน setup() และ loop()'), { line: 1 });
+        await prog.setup();
+        let last = performance.now();
+        while (sim.running && gen === sim.gen) { await prog.loop(); if (performance.now() - last > 8) { await sleep(0); last = performance.now(); } }
+      } catch (e) { if (e !== STOP && gen === sim.gen) onError(e); }
+    })();
+    return true;
+  };
+  function refreshInts() {
+    sim.ints.forEach((it) => {
+      const lv = readPin(it.gpio);
+      if (it.last !== undefined && lv !== it.last) { const rising = lv === 1; if (it.mode === 1 || (it.mode === 3 && rising) || (it.mode === 2 && !rising)) safeCall(it.fn); }
+      it.last = lv;
+    });
+  }
+
+  sim.stop = function (quiet) {
+    const was = sim.running;
+    sim.running = false; sim.gen++;
+    cancelAnimationFrame(sim.raf); clearInterval(sim.intTimer);
+    sim.timers.forEach(clearTimeout); sim.timers = [];
+    sim.listeners.forEach((f) => f()); sim.listeners = [];
+    Object.keys(osc).forEach((k) => sound(k, 0));
+    if (was) {
+      // reset visuals
+      ed.project.parts.forEach((p) => {
+        const d = P[p.type], e = el(p); if (!e) return;
+        try {
+          if (d.kind === 'led') { e.value = false; e.brightness = 0; }
+          if (d.kind === 'rgb') { e.ledRed = e.ledGreen = e.ledBlue = 0; }
+          if (d.kind === 'bargraph') e.values = [];
+          if (d.kind === 'seg7') e.values = [0, 0, 0, 0, 0, 0, 0, 0];
+          if (d.kind === 'buzzer') e.hasSignal = false;
+          if (d.kind === 'board') { const B = IOTF.BOARDS[d.board]; e[B.led.prop] = false; }
+          if (d.kind === 'pixels') { if (p.type === 'neopixel') { e.r = e.g = e.b = 0; } else e.reset && e.reset(); }
+          if (d.kind === 'lcd') { e.characters = new Uint8Array(p.type === 'lcd2004' ? 80 : 32).fill(32); e.backlight = false; e.cursor = e.blink = false; }
+          if (d.kind === 'oled' && e.imageData) { e.imageData.data.fill(0); e.redraw && e.redraw(); }
+          if (d.kind === 'relay') ed.els[p.id].wrap.classList.remove('energized');
+          if (d.kind === 'relay4') for (let i = 1; i <= 4; i++) { const c = e.q('.ch' + i); if (c) c.setAttribute('fill', '#4a1414'); }
+        } catch (err) { /* ignore */ }
+      });
+      flushSerial();
+      if (!quiet) serialWrite('— หยุดจำลอง —\n', 'sinfo');
+    }
+    if (IOTF.iot && ed.project) IOTF.iot.onRun(false);
+    ed.setRunning(false);
+  };
+  sim.serialSend = (text) => { sim.serialIn += text; };
+  sim.loraReceive = (text, rssi) => { sim.loraRx.push({ text, rssi: rssi || -60 - Math.floor(Math.random() * 30) }); };
+})();

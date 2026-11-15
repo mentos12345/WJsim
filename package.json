@@ -1,0 +1,114 @@
+{
+  "name": "iotforge",
+  "productName": "IoTForge",
+  "version": "1.0.0",
+  "description": "โปรแกรมจำลองวงจร IoT แบบออฟไลน์ มีโหมด Basic (Block) และ Advanced (C++)",
+  "main": "electron/main.js",
+  "author": "IoTForge Contributors",
+  "license": "MIT",
+  "homepage": "https://mentos12345.github.io/iotforge/",
+  "scripts": {
+    "start": "electron .",
+    "vendor": "node scripts/vendor.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "test": "node scripts/test-transpile.js"
+  },
+  "devDependencies": {
+    "@wokwi/elements": "1.9.2",
+    "blockly": "13.4.0",
+    "codemirror": "5.65.21",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2"
+  },
+  "build": {
+    "appId": "org.iotforge.app",
+    "productName": "IoTForge",
+    "copyright": "© 2026 IoTForge Contributors",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "src/**",
+      "LICENSE",
+      "CREDITS.md",
+      "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "iotf",
+        "name": "IoTForge Project",
+        "role": "Editor",
+        "icon": "icon"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.education",
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "IoTForge ${version}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "IoTForge-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "IoTForge-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Education",
+      "icon": "build/icon.png",
+      "syncDesktopName": true
+    },
+    "publish": null
+  },
+  "desktopName": "iotforge.desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mentos12345/iotforge.git"
+  }
+}
