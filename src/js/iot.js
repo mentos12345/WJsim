@@ -17,11 +17,13 @@
   function busRecv(msg) {
     if (!msg || msg.from === winId) return;
     if (msg.type === 'mqtt') deliver(msg.topic, msg.payload, msg.retain, true);
+    if (msg.type === 'espnow') { if (IOTF.sim.espnowFromRemote) IOTF.sim.espnowFromRemote(msg); }
     if (msg.type === 'lora') {
       loraLog(`รับ (${(msg.freq / 1e6).toFixed(0)} MHz): ${msg.text}`);
       if (IOTF.sim.running) IOTF.sim.loraReceive(msg.text);
     }
   }
+  iot.busSend = busSend;
   if (window.iotfHost && window.iotfHost.onBus) window.iotfHost.onBus(busRecv);
   else if ('BroadcastChannel' in window) { bc = new BroadcastChannel('iotforge-bus'); bc.onmessage = (e) => busRecv(e.data); }
 
@@ -41,13 +43,13 @@
   };
   iot.unsubscribe = (cid, filter) => { iot.subs = iot.subs.filter((s) => !(s.cid === cid && s.filter === filter)); };
   iot.unsubscribeAll = (cid) => { iot.subs = iot.subs.filter((s) => s.cid !== cid); };
-  function deliver(topic, payload, retain, remote) {
+  function deliver(topic, payload, retain, remote, from) {
     if (retain) iot.retained[topic] = payload;
     log(`<span class="t">${esc(topic)}</span> ${esc(payload)}${remote ? ' <span class="d">(จากหน้าต่างอื่น)</span>' : ''}`);
     iot.last[topic] = payload;
     const h = iot.hist[topic] || (iot.hist[topic] = []);
     const n = parseFloat(payload); if (!Number.isNaN(n)) { h.push(n); if (h.length > 60) h.shift(); }
-    iot.subs.slice().forEach((s) => { if (match(s.filter, topic)) { try { s.cb(topic, payload); } catch (e) { console.error(e); } } });
+    iot.subs.slice().forEach((s) => { if (match(s.filter, topic)) { try { s.cb(topic, payload, from); } catch (e) { console.error(e); } } });
     updateWidgets(topic);
   }
   iot.publish = function (topic, payload, retain, from) {
@@ -55,7 +57,7 @@
       const name = topic.split('/').pop();
       addWidget({ type: 'value', title: name, topic, chart: true });
     }
-    deliver(topic, payload, retain, false);
+    deliver(topic, payload, retain, false, from);
     busSend({ type: 'mqtt', topic, payload, retain });
   };
 
@@ -69,10 +71,29 @@
     box.scrollTop = box.scrollHeight;
   }
   iot.log = log;
-  iot.setWifi = (text, ok) => { const e = $('netStatus'); e.textContent = text; e.style.color = ok ? '#3cb371' : ''; };
+  // one status line per board when several boards are online
+  let wifiState = {};
+  iot.setWifi = (text, ok, key) => {
+    const e = $('netStatus');
+    if (!key) { wifiState = {}; e.textContent = text; e.style.color = ok ? '#3cb371' : ''; return; }
+    wifiState[key] = { text, ok };
+    const keys = Object.keys(wifiState), many = IOTF.sim.devices && IOTF.sim.devices.length > 1;
+    e.textContent = many ? keys.map((k) => k + ': ' + wifiState[k].text).join('  |  ') : text;
+    e.style.color = keys.every((k) => wifiState[k].ok) ? '#3cb371' : '';
+  };
   iot.onRun = (on) => {
     if (on) { iot.subs = iot.subs.filter((s) => s.cid === 'dash'); iot.setWifi('WiFi: ยังไม่เชื่อมต่อ'); }
     else { iot.subs = iot.subs.filter((s) => s.cid === 'dash'); iot.setWifi('WiFi: (หยุดจำลอง)'); }
+  };
+
+  /* ---------- tiny browser: send HTTP requests to boards running a WebServer ---------- */
+  iot.browse = async function (url) {
+    const out = $('httpOut'); if (!out) return;
+    if (!IOTF.sim.running) { out.textContent = 'เริ่มจำลองก่อน แล้วค่อยเปิด URL ของบอร์ด'; return; }
+    if (!/^https?:\/\//.test(url)) url = 'http://' + url;
+    out.textContent = 'GET ' + url + ' …';
+    const r = await IOTF.sim.httpRequest(null, 'GET', url, '', 4000);
+    out.textContent = r.code < 0 ? `เชื่อมต่อไม่ได้ (${r.code === -11 ? 'หมดเวลา' : 'ไม่มีเซิร์ฟเวอร์ที่ ' + url}) — บอร์ดต้องต่อ WiFi และเรียก server.begin() กับ server.handleClient()` : `HTTP ${r.code}\n\n${r.body}`;
   };
 
   /* ---------- LoRa ---------- */
@@ -187,4 +208,8 @@
     };
   };
   iot.reset = function () { iot.retained = {}; iot.hist = {}; iot.last = {}; iot.subs = []; $('mqttLog').innerHTML = ''; $('loraOut').textContent = ''; renderWidgets(); };
+  if ($('btnHttp')) {
+    $('btnHttp').onclick = () => iot.browse($('httpUrl').value.trim());
+    $('httpUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') iot.browse($('httpUrl').value.trim()); });
+  }
 })();

@@ -395,5 +395,202 @@ void loop() {
 `
   });
 
+  // ---------------- several boards talking to each other ----------------
+  const nowSend = (value, to) => blk('iotf_now_send', { TO: to || 'ALL' }, { VALUE: inp(value) });
+  T.push({
+    id: 'now-button', mode: 'basic', board: 'esp32', title: 'ESP32 สองตัว: กดปุ่มที่ตัวหนึ่ง ไฟติดอีกตัว',
+    desc: 'ESP32 #1 ส่งสถานะปุ่มแบบไร้สาย (ESP-NOW) ไปให้ ESP32 #2 เปิด-ปิด LED',
+    parts: [{ id: 'btn1', type: 'pushbutton', x: 230, y: 120 }, { id: 'led1', type: 'led', x: 760, y: 70 }],
+    boards: [{ id: 'board2', board: 'esp32', name: 'ESP32 #2', x: 560, y: 40,
+      blocks: main([], [ifElse(blk('iotf_now_new'), [
+        ifElse(cmp(blk('iotf_now_number'), 'EQ', num(1)), [dw(2, 'HIGH')], [dw(2, 'LOW')]),
+        print(join('ได้รับ ', blk('iotf_now_text')))
+      ]), wait(10)]) }],
+    wires: [['btn1', '1.l', 'D4'], ['led1', 'A', 'D2', 'board2']],
+    blocks: main([], [ifElse(blk('iotf_button', { PIN: '4' }), [nowSend(num(1))], [nowSend(num(0))]), wait(100)])
+  });
+  T.push({
+    id: 'now-temp', mode: 'basic', board: 'esp32', title: 'ESP32 สองตัว: ส่งอุณหภูมิไปโชว์อีกเครื่อง',
+    desc: 'ESP32 #1 อ่าน DHT22 แล้วส่งไร้สายไปให้ ESP32 #2 แสดงบนจอ LCD',
+    parts: [{ id: 'dht1', type: 'dht22', x: 230, y: 40 }, { id: 'lcd1', type: 'lcd1602', x: 740, y: 60 }],
+    boards: [{ id: 'board2', board: 'esp32', name: 'ESP32 #2', x: 560, y: 40,
+      blocks: main([blk('iotf_lcd_print', { ROW: 0, COL: 0 }, { TEXT: inp(blk('text', { TEXT: 'Waiting...' })) })], [ifElse(blk('iotf_now_new'), [
+        blk('iotf_lcd_clear'),
+        blk('iotf_lcd_print', { ROW: 0, COL: 0 }, { TEXT: inp(blk('text', { TEXT: 'From ESP32 #1' })) }),
+        blk('iotf_lcd_print', { ROW: 1, COL: 0 }, { TEXT: inp(join('Temp ', blk('iotf_now_text'), ' C')) })
+      ]), wait(50)]) }],
+    wires: [['dht1', 'SDA', 'D15'], ['lcd1', 'SDA', 'D21', 'board2'], ['lcd1', 'SCL', 'D22', 'board2']],
+    blocks: main([], [setv('temp', blk('iotf_dht', { WHAT: 'T', PIN: '15' })), nowSend(getv('temp')), print(join('ส่ง ', getv('temp'))), wait(2000)], ['temp'])
+  });
+  T.push({
+    id: 'now-struct', mode: 'advanced', board: 'esp32', power: true, title: 'ESP-NOW ส่ง struct ไปหาบอร์ดที่ระบุ',
+    desc: 'C++: ESP32 #1 ส่งค่าลูกบิดและปุ่มเป็น struct ไปที่ MAC ของ ESP32 #2 แล้วคุม Servo กับ LED',
+    parts: [{ id: 'pot1', type: 'potentiometer', x: 230, y: 20 }, { id: 'btn1', type: 'pushbutton', x: 230, y: 150 }, { id: 'sv1', type: 'servo', x: 750, y: 30 }, { id: 'led1', type: 'led', x: 770, y: 160 }],
+    boards: [{ id: 'board2', board: 'esp32', name: 'ESP32 #2', x: 560, y: 40, code: `// ESP32 #2 — ตัวรับ (MAC 24:0A:C4:00:00:02)
+#include <WiFi.h>
+#include <esp_now.h>
+#include <ESP32Servo.h>
+
+typedef struct {
+  int knob;
+  bool pressed;
+  unsigned long count;
+} Message;
+
+Message msg;
+Servo servo;
+bool fresh = false;
+
+void onRecv(const uint8_t *mac, const uint8_t *data, int len) {
+  memcpy(&msg, data, sizeof(msg));
+  fresh = true;
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(2, OUTPUT);
+  servo.attach(13);
+  WiFi.mode(WIFI_STA);
+  Serial.print("MAC: ");
+  Serial.println(WiFi.macAddress());
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
+  esp_now_register_recv_cb(onRecv);
+}
+
+void loop() {
+  if (fresh) {
+    fresh = false;
+    servo.write(map(msg.knob, 0, 4095, 0, 180));
+    digitalWrite(2, msg.pressed ? HIGH : LOW);
+    Serial.printf("#%lu knob=%d pressed=%d\\n", msg.count, msg.knob, msg.pressed);
+  }
+  delay(10);
+}
+` }],
+    wires: [['pot1', 'SIG', 'D34'], ['btn1', '1.l', 'D4'], ['sv1', 'PWM', 'D13', 'board2'], ['led1', 'A', 'D2', 'board2']],
+    code: `// ESP32 #1 — ตัวส่ง (MAC 24:0A:C4:00:00:01)
+#include <WiFi.h>
+#include <esp_now.h>
+
+// MAC ของ ESP32 #2 (ดูได้จากแผงคุณสมบัติของบอร์ด)
+uint8_t receiver[] = {0x24, 0x0A, 0xC4, 0x00, 0x00, 0x02};
+
+typedef struct {
+  int knob;
+  bool pressed;
+  unsigned long count;
+} Message;
+
+Message msg;
+esp_now_peer_info_t peer;
+
+void onSent(const uint8_t *mac, esp_now_send_status_t status) {
+  if (status != ESP_NOW_SEND_SUCCESS) Serial.println("ส่งไม่สำเร็จ");
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(4, INPUT_PULLUP);
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed");
+    return;
+  }
+  esp_now_register_send_cb(onSent);
+  memcpy(peer.peer_addr, receiver, 6);
+  peer.channel = 0;
+  peer.encrypt = false;
+  esp_now_add_peer(&peer);
+}
+
+void loop() {
+  msg.knob = analogRead(34);
+  msg.pressed = digitalRead(4) == LOW;
+  msg.count++;
+  esp_now_send(receiver, (uint8_t *) &msg, sizeof(msg));
+  delay(200);
+}
+`
+  });
+  T.push({
+    id: 'http-relay', mode: 'advanced', board: 'esp32', power: true, title: 'ESP32 สั่งงานอีกตัวผ่าน WiFi (HTTP)',
+    desc: 'ESP32 #2 เป็น Web Server คุม Relay ส่วน ESP32 #1 กดปุ่มแล้วส่ง HTTP GET ไปเปิด-ปิด ลองเปิด http://192.168.1.102/ ในแท็บ Dashboard ได้ด้วย',
+    parts: [{ id: 'btn1', type: 'pushbutton', x: 230, y: 120 }, { id: 'rl1', type: 'iotf-relay4', x: 750, y: 40 }, { id: 'led1', type: 'led', x: 770, y: 250 }],
+    boards: [{ id: 'board2', board: 'esp32', name: 'ESP32 #2', x: 560, y: 40, code: `// ESP32 #2 — Web Server ที่ 192.168.1.102
+#include <WiFi.h>
+#include <WebServer.h>
+
+WebServer server(80);
+bool relayOn = false;
+
+void apply() {
+  digitalWrite(26, relayOn ? HIGH : LOW);
+  digitalWrite(2, relayOn ? HIGH : LOW);
+}
+
+void handleRoot() {
+  server.send(200, "text/plain", String("relay=") + (relayOn ? "on" : "off"));
+}
+
+void handleSet() {
+  if (server.hasArg("state")) relayOn = server.arg("state") == "on";
+  else relayOn = !relayOn;
+  apply();
+  Serial.println(String("จาก ") + server.client().remoteIP().toString() + " -> " + (relayOn ? "ON" : "OFF"));
+  server.send(200, "text/plain", relayOn ? "on" : "off");
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(26, OUTPUT);
+  pinMode(2, OUTPUT);
+  WiFi.begin("WJSIM-WiFi", "");
+  while (WiFi.status() != WL_CONNECTED) delay(200);
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+  server.on("/", handleRoot);
+  server.on("/toggle", handleSet);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
+` }],
+    wires: [['btn1', '1.l', 'D4'], ['rl1', 'IN1', 'D26', 'board2'], ['led1', 'A', 'D2', 'board2']],
+    code: `// ESP32 #1 — กดปุ่มแล้วสั่ง ESP32 #2 ผ่าน HTTP
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* target = "http://192.168.1.102/toggle";
+bool last = HIGH;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(4, INPUT_PULLUP);
+  WiFi.begin("WJSIM-WiFi", "");
+  while (WiFi.status() != WL_CONNECTED) delay(200);
+  Serial.println("WiFi พร้อม กดปุ่มเพื่อสั่ง relay");
+}
+
+void loop() {
+  bool now = digitalRead(4);
+  if (last == HIGH && now == LOW) {
+    HTTPClient http;
+    http.begin(target);
+    int code = http.GET();
+    if (code > 0) Serial.println("relay: " + http.getString());
+    else Serial.println("ส่งไม่สำเร็จ " + String(code));
+    http.end();
+  }
+  last = now;
+  delay(20);
+}
+`
+  });
+
   IOTF.TEMPLATES = T;
 })();

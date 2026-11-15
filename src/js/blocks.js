@@ -3,7 +3,7 @@
   'use strict';
   const ed = IOTF.editor;
   const BL = window.Blockly;
-  const COL = { base: 30, io: 210, time: 120, serial: 160, sensor: 290, out: 330, iot: 15, logic: 210 };
+  const COL = { base: 30, io: 210, time: 120, serial: 160, sensor: 290, out: 330, iot: 15, now: 45, logic: 210 };
 
   const board = () => ed.boardDef() || IOTF.BOARDS.esp32;
   function pinField(analog) {
@@ -77,6 +77,16 @@
   // IoT
   def('iotf_wifi', function () { this.appendDummyInput().appendField('เชื่อมต่อ WiFi ชื่อ').appendField(new BL.FieldTextInput('WJSIM-WiFi'), 'SSID').appendField('รหัส').appendField(new BL.FieldTextInput(''), 'PASS'); stmt(this, COL.iot, 'ใส่ไว้ในส่วน setup'); });
   def('iotf_mqtt_publish', function () { this.appendValueInput('VALUE').appendField('ส่งค่า'); this.appendDummyInput().appendField('ไปที่ Dashboard หัวข้อ').appendField(new BL.FieldTextInput('wjsim/temp'), 'TOPIC'); this.setInputsInline(true); stmt(this, COL.iot, 'ส่งผ่าน MQTT ต้องเชื่อม WiFi ก่อน'); });
+  // board-to-board (ESP-NOW)
+  const nowTargets = () => [['ทุกบอร์ด', 'ALL']].concat(ed.boards().filter((b) => b !== ed.board()).map((b) => [ed.boardName(b), ed.netInfo(b).mac]));
+  def('iotf_now_send', function () {
+    this.appendValueInput('VALUE').appendField('ส่งข้อมูลไร้สาย');
+    this.appendDummyInput().appendField('ถึง').appendField(new BL.FieldDropdown(function () { const o = nowTargets(); const v = this.getValue && this.getValue(); if (v && !o.some((x) => x[1] === v)) o.push([v, v]); return o; }), 'TO');
+    this.setInputsInline(true); stmt(this, COL.now, 'ส่งผ่าน ESP-NOW (ESP32 คุยกันตรง ๆ ไม่ต้องมีเราเตอร์) บอร์ดปลายทางต้องมีบล็อก รับข้อมูลไร้สาย');
+  });
+  def('iotf_now_new', function () { this.appendDummyInput().appendField('ได้รับข้อมูลไร้สายใหม่'); val(this, COL.now, 'Boolean'); });
+  def('iotf_now_text', function () { this.appendDummyInput().appendField('ข้อความไร้สายล่าสุด'); val(this, COL.now, 'String'); });
+  def('iotf_now_number', function () { this.appendDummyInput().appendField('ตัวเลขไร้สายล่าสุด'); val(this, COL.now, 'Number'); });
   def('iotf_mqtt_value', function () { this.appendDummyInput().appendField('ข้อความล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('wjsim/led'), 'TOPIC'); val(this, COL.iot, 'String'); });
   def('iotf_mqtt_number', function () { this.appendDummyInput().appendField('ตัวเลขล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('wjsim/level'), 'TOPIC'); val(this, COL.iot, 'Number'); });
 
@@ -86,7 +96,7 @@
   G.INDENT = '  ';
   const RESERVED = new Set('int float char long double bool boolean void String byte word if else for while do switch case break continue return true false HIGH LOW INPUT OUTPUT setup loop delay map min max abs new delete class struct const static unsigned signed auto this'.split(' '));
   G.init = function (ws) {
-    this.inc = new Set(); this.glob = new Map(); this.setups = new Map(); this.helpers = new Map(); this.subs = new Set(); this.mqtt = false;
+    this.inc = new Set(); this.glob = new Map(); this.setups = new Map(); this.helpers = new Map(); this.subs = new Set(); this.mqtt = false; this.now = null;
     this.vars = new Map();
     const map = ws.getVariableMap ? ws.getVariableMap() : null;
     const all = map ? (map.getAllVariables ? map.getAllVariables() : []) : ws.getAllVariables();
@@ -101,7 +111,7 @@
       const t = b.getInputTargetBlock('VALUE');
       const v = this.vars.get(b.getFieldValue('VAR'));
       if (v && t && (t.outputConnection.getCheck() || []).includes('String')) v.str = true;
-      if (v && t && ['text', 'text_join', 'iotf_mqtt_value'].includes(t.type)) v.str = true;
+      if (v && t && ['text', 'text_join', 'iotf_mqtt_value', 'iotf_now_text'].includes(t.type)) v.str = true;
     });
     this.setupCode = ''; this.loopCode = '';
   };
@@ -129,9 +139,20 @@
       subs.forEach((s) => out.push(`      mqtt.subscribe(${JSON.stringify(s)});`));
       out.push('    }', '  }', '  mqtt.loop();', '}', '');
     }
+    if (this.now) {
+      const peers = [...this.now];
+      out.push('uint8_t nowAll[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};');
+      peers.forEach((m, i) => out.push(`uint8_t nowPeer${i + 1}[] = {${m.split(':').map((x) => '0x' + x).join(', ')}};`));
+      out.push('String nowMsg = "";', 'bool nowNew = false;', '',
+        'void nowOnRecv(const uint8_t *mac, const uint8_t *data, int len) {', '  nowMsg = "";', '  for (int i = 0; i < len; i++) nowMsg += (char)data[i];', '  nowNew = true;', '}', '',
+        'void nowAddPeer(const uint8_t *mac) {', '  esp_now_peer_info_t peer = {};', '  memcpy(peer.peer_addr, mac, 6);', '  esp_now_add_peer(&peer);', '}', '',
+        'void nowSend(const uint8_t *mac, String msg) {', '  esp_now_send(mac, (const uint8_t *)msg.c_str(), msg.length());', '}', '',
+        'bool nowGotNew() {', '  bool n = nowNew;', '  nowNew = false;', '  return n;', '}', '');
+    }
     this.helpers.forEach((h) => { out.push(h, ''); });
     out.push('void setup() {');
     const su = [...this.setups.values()];
+    if (this.now) { su.push('WiFi.mode(WIFI_STA);', 'if (esp_now_init() != ESP_OK) Serial.println("ESP-NOW init failed");', 'esp_now_register_recv_cb(nowOnRecv);', 'nowAddPeer(nowAll);'); [...this.now].forEach((m, i) => su.push(`nowAddPeer(nowPeer${i + 1});`)); }
     if (this.mqtt) { su.push('mqtt.setServer("broker.wjsim.local", 1883);'); if (this.subs.size) su.push('mqtt.setCallback(iotfOnMessage);'); }
     su.forEach((l) => out.push('  ' + l));
     out.push(this.setupCode.replace(/\s+$/, '') ? this.setupCode.replace(/\s+$/, '') : '', '}', '', 'void loop() {');
@@ -205,6 +226,16 @@
   };
   const useMqtt = () => { serial(); G.inc.add(isEsp() ? 'WiFi.h' : 'WiFiNINA.h'); G.inc.add('PubSubClient.h'); G.mqtt = true; };
   F.iotf_mqtt_publish = (b) => { useMqtt(); return `mqtt.publish(${JSON.stringify(b.getFieldValue('TOPIC'))}, String(${v(b, 'VALUE', O.NONE, '0')}).c_str());\n`; };
+  const useNow = () => { serial(); G.inc.add('WiFi.h'); G.inc.add('esp_now.h'); if (!G.now) G.now = new Set(); };
+  F.iotf_now_send = (b) => {
+    useNow(); const to = b.getFieldValue('TO');
+    let target = 'nowAll';
+    if (to && to !== 'ALL') { G.now.add(to); target = 'nowPeer' + ([...G.now].indexOf(to) + 1); }
+    return `nowSend(${target}, String(${v(b, 'VALUE', O.NONE, '0')}));\n`;
+  };
+  F.iotf_now_new = () => { useNow(); return ['nowGotNew()', O.ATOMIC]; };
+  F.iotf_now_text = () => { useNow(); return ['nowMsg', O.ATOMIC]; };
+  F.iotf_now_number = () => { useNow(); return ['nowMsg.toFloat()', O.ATOMIC]; };
   F.iotf_mqtt_value = (b) => { useMqtt(); const t = b.getFieldValue('TOPIC'); G.subs.add(t); return [`iotfGet(${JSON.stringify(t)})`, O.ATOMIC]; };
   F.iotf_mqtt_number = (b) => { useMqtt(); const t = b.getFieldValue('TOPIC'); G.subs.add(t); return [`iotfGet(${JSON.stringify(t)}).toFloat()`, O.ATOMIC]; };
 
@@ -259,6 +290,7 @@
         { kind: 'category', name: 'Serial', colour: COL.serial, contents: [B('iotf_serial_print', { inputs: { VALUE: txt('สวัสดี') } })] },
         { kind: 'category', name: 'เซ็นเซอร์', colour: COL.sensor, contents: sensors },
         { kind: 'category', name: 'เอาต์พุต', colour: COL.out, contents: [B('iotf_servo', { inputs: { ANGLE: num(90) } }), B('iotf_tone', { inputs: { FREQ: num(1000), MS: num(200) } }), B('iotf_notone'), B('iotf_rgb'), B('iotf_relay'), B('iotf_lcd_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_lcd_clear'), B('iotf_oled_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_oled_clear'), B('iotf_neopixel', { inputs: { I: num(0) } }), B('iotf_neopixel_fill')] },
+        { kind: 'category', name: 'บอร์ดคุยกัน', colour: COL.now, contents: [B('iotf_now_send', { inputs: { VALUE: num(1) } }), B('controls_if', { inputs: { IF0: { block: { type: 'iotf_now_new' } } } }), B('iotf_now_new'), B('iotf_now_text'), B('iotf_now_number')] },
         { kind: 'category', name: 'IoT', colour: COL.iot, contents: [B('iotf_wifi'), B('iotf_mqtt_publish', { inputs: { VALUE: num(25) } }), B('iotf_mqtt_value'), B('iotf_mqtt_number')] },
         { kind: 'sep' },
         { kind: 'category', name: 'เงื่อนไข', colour: '#5b80a5', contents: [B('controls_if'), B('controls_if', { extraState: { hasElse: true } }), B('logic_compare'), B('logic_operation'), B('logic_negate'), B('logic_boolean'), B('logic_ternary')] },
@@ -291,6 +323,16 @@
   blocks.onChange = (f) => blocks.listeners.push(f);
   blocks.code = function () { loopN = 0; return G.workspaceToCode(blocks.ws); };
   blocks.save = () => BL.serialization.workspaces.save(blocks.ws);
+  // C++ for a board whose blocks are not on screen (multi-board run)
+  blocks.codeFor = function (state) {
+    const ws = new BL.Workspace();
+    try {
+      BL.Events.disable();
+      if (state && state.blocks) BL.serialization.workspaces.load(state, ws);
+      if (!ws.getTopBlocks(false).some((b) => b.type === 'iotf_main')) ws.newBlock('iotf_main');
+      loopN = 0; return G.workspaceToCode(ws);
+    } finally { BL.Events.enable(); ws.dispose(); }
+  };
   blocks.load = function (state) {
     blocks.loading = true;
     BL.Events.disable();

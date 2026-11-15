@@ -10,7 +10,7 @@
 
   /* ---------- project model ---------- */
   function newProject(mode = 'basic', boardKey = 'esp32') {
-    return { app: 'WJSIM', version: 1, name: 'ไม่มีชื่อ', mode, parts: [], wires: [], blocks: null, code: '', codeManual: false, widgets: [], sdFiles: {} };
+    return { app: 'WJSIM', version: 1, name: 'ไม่มีชื่อ', mode, parts: [], wires: [], blocks: null, code: '', codeManual: false, programs: {}, widgets: [], sdFiles: {} };
   }
   function boardPart(boardKey) { return { id: 'board', type: IOTF.BOARDS[boardKey].tag, x: 40, y: 40, rot: 0, attrs: {}, sim: {} }; }
 
@@ -19,15 +19,57 @@
     if (!p.parts.some((q) => IOTF.PARTS[q.type] && IOTF.PARTS[q.type].kind === 'board')) p.parts.unshift(boardPart('esp32'));
     p.widgets = p.widgets || []; p.sdFiles = p.sdFiles || {};
     ed.load(p);
-    blocks.load(p.blocks);
+    // one program per board; older files kept a single program at the top level
+    if (!p.programs) p.programs = {};
+    const first = ed.board();
+    if (first && !p.programs[first.id]) p.programs[first.id] = { blocks: p.blocks || null, code: p.code || '', codeManual: !!p.codeManual };
+    app.curBoard = null;
     iot.reset();
-    syncModeUI();
+    showProgram();
     $('wireStyle').value = p.wireStyle || 'ortho';
-    if (p.codeManual && p.code) setCode(p.code, true); else regen();
     selectRightTab(p.mode === 'advanced' && (p.codeManual || blocks.isEmpty()) ? 'code' : 'blocks');
     renderChecks();
     $('serialOut').textContent = ''; $('sdOut').textContent = 'ยังไม่มีไฟล์';
     app.path = opts.path || null; app.isDirty = !!opts.dirty; updateTitle();
+  }
+
+  /* ---------- one program per board ---------- */
+  const prog = (id) => ed.project.programs[id] || (ed.project.programs[id] = { blocks: null, code: '', codeManual: false });
+  function stashActive() {
+    if (!app.curBoard || !ed.part(app.curBoard) || !app.cm) return;
+    const pr = prog(app.curBoard);
+    pr.blocks = blocks.save(); pr.code = app.cm.getValue(); pr.codeManual = !!ed.project.codeManual;
+  }
+  function showProgram() {
+    const b = ed.board(); if (!b) return;
+    if (app.curBoard === b.id) { syncModeUI(); renderBoardSwitch(); return; }
+    stashActive();
+    app.curBoard = b.id;
+    const pr = prog(b.id);
+    blocks.load(pr.blocks); blocks.refreshPins();
+    ed.project.blocks = pr.blocks;
+    if (pr.codeManual && pr.code) setCode(pr.code, true); else regen();
+    syncModeUI(); renderBoardSwitch();
+  }
+  function renderBoardSwitch() {
+    const box = $('boardSwitch'), bs = ed.boards();
+    box.hidden = bs.length < 2;
+    if (bs.length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = '<span class="muted small">โค้ดของ</span>' + bs.map((b) => `<button class="chip ${b === ed.board() ? 'on' : ''}" data-id="${b.id}">${ed.boardName(b).replace(/[&<>"]/g, '')}</button>`).join('');
+    box.querySelectorAll('button').forEach((x) => x.onclick = () => ed.setActiveBoard(x.dataset.id));
+  }
+  // C++ for every board, for running them together
+  function programsForRun() {
+    stashActive();
+    const cur = ed.board();
+    return ed.boards().map((b) => {
+      if (b === cur) return { board: b, code: ed.project.codeManual ? app.cm.getValue() : blocks.code() };
+      const pr = prog(b.id);
+      if (pr.codeManual && pr.code) return { board: b, code: pr.code };
+      const keep = ed.project.activeBoard;
+      ed.project.activeBoard = b.id;
+      try { return { board: b, code: blocks.codeFor(pr.blocks) }; } finally { ed.project.activeBoard = keep; }
+    });
   }
 
   /* ---------- code editor ---------- */
@@ -47,7 +89,8 @@
   }
   let errMark = null;
   function clearErrMarks() { if (errMark !== null) { app.cm.removeLineClass(errMark, 'background', 'cm-errline'); errMark = null; } }
-  app.markError = function (line) {
+  app.markError = function (line, boardId) {
+    if (boardId && ed.part(boardId) && boardId !== app.curBoard) ed.setActiveBoard(boardId);
     clearErrMarks();
     const ln = Math.max(0, Math.min(app.cm.lineCount() - 1, line - 1));
     errMark = app.cm.addLineClass(ln, 'background', 'cm-errline');
@@ -89,6 +132,7 @@
   };
   function snapshotProject() {
     const p = ed.project;
+    stashActive();
     p.blocks = blocks.save();
     p.code = app.cm.getValue();
     return p;
@@ -125,9 +169,8 @@
     const checks = renderChecks();
     const errs = checks.filter((c) => c.lvl === 'err');
     if (errs.length) toast(`วงจรมีปัญหา ${errs.length} ข้อ อุปกรณ์ที่ต่อไม่ครบจะไม่ทำงาน (ดูแท็บ ตรวจวงจร)`);
-    const code = ed.project.codeManual ? app.cm.getValue() : blocks.code();
-    if (!ed.project.codeManual) setCode(code, false);
-    await sim.start(code);
+    if (!ed.project.codeManual) setCode(blocks.code(), false);
+    await sim.start(programsForRun());
     updateRunBtn();
   }
   function updateRunBtn() { const b = $('btnRun'); b.textContent = sim.running ? '■ หยุด' : '▶ เริ่มจำลอง'; b.classList.toggle('stop', sim.running); }
@@ -206,11 +249,16 @@
     const p = newProject(t.mode, t.board);
     p.name = t.title;
     p.parts.push(boardPart(t.board));
+    (t.boards || []).forEach((x) => p.parts.push({ id: x.id, type: IOTF.BOARDS[x.board].tag, x: x.x, y: x.y, rot: 0, attrs: {}, sim: {}, name: x.name }));
+    if (t.boards) p.parts[0].name = t.boardName || (t.board === 'esp32' ? 'ESP32' : IOTF.BOARDS[t.board].name) + ' #1';
     t.parts.forEach((q) => p.parts.push({ id: q.id, type: q.type, x: q.x, y: q.y, rot: q.rot || 0, attrs: Object.assign({}, IOTF.PARTS[q.type].attrs, q.attrs || {}), sim: Object.fromEntries(Object.entries(IOTF.PARTS[q.type].sim).map(([k, v]) => [k, (q.sim || {})[k] ?? v[0]])) }));
     const colors = ['#4aa3ff', '#3ddc84', '#ffb020', '#c084fc', '#f472b6', '#22d3ee', '#a3e635', '#fb923c'];
-    p.wires = t.wires.map(([a, ap, bp], i) => ({ id: 'w' + i, a: { p: a, pin: ap }, b: { p: 'board', pin: bp }, color: colors[i % colors.length], auto: t.mode === 'basic' }));
+    p.wires = t.wires.map(([a, ap, bp], i) => ({ id: 'w' + i, a: { p: a, pin: ap }, b: { p: t.wires[i][3] || 'board', pin: bp }, color: colors[i % colors.length], auto: t.mode === 'basic' }));
     p.blocks = t.blocks || null;
     p.code = t.code || ''; p.codeManual = !!t.code;
+    p.programs = { board: { blocks: p.blocks, code: p.code, codeManual: p.codeManual } };
+    (t.boards || []).forEach((x) => { p.programs[x.id] = { blocks: x.blocks || null, code: x.code || '', codeManual: !!x.code }; });
+    p.activeBoard = 'board';
     p.widgets = (t.widgets || []).map((w, i) => Object.assign({ id: 'wg' + i }, w));
     openProject(p, { dirty: false });
     if (t.power) { ed.autoPower(); ed.undo = []; }
@@ -232,7 +280,7 @@
       <b>Electron</b> © OpenJS Foundation and Electron contributors — MIT License</p>
       <p class="small muted">ข้อความสัญญาอนุญาตฉบับเต็มอยู่ในไฟล์ LICENSE, CREDITS.md และโฟลเดอร์ vendor ของแอป · ชื่อผลิตภัณฑ์ เช่น Arduino และ ESP32 เป็นเครื่องหมายการค้าของเจ้าของแต่ละราย WJSIM ไม่มีส่วนเกี่ยวข้องกับเจ้าของเหล่านั้น</p>
       <h4>ข้อจำกัดของตัวจำลอง</h4>
-      <p class="small muted">โค้ด C++ ถูกแปลงไปรันในตัวจำลอง รองรับคำสั่ง Arduino ทั่วไปและไลบรารียอดนิยม (WiFi, PubSubClient, DHT, Servo, LiquidCrystal_I2C, Adafruit SSD1306/ILI9341/NeoPixel/MPU6050, HX711, MFRC522, TinyGPSPlus, LoRa, RTClib, SD, Keypad, Stepper, IRremote) แต่ยังไม่รองรับ struct/class ที่เขียนเอง และไม่ได้จำลองไฟฟ้าแบบละเอียด ควรทดสอบกับบอร์ดจริงก่อนใช้งานจริง</p>
+      <p class="small muted">โค้ด C++ ถูกแปลงไปรันในตัวจำลอง รองรับคำสั่ง Arduino ทั่วไปและไลบรารียอดนิยม (WiFi, PubSubClient, DHT, Servo, LiquidCrystal_I2C, Adafruit SSD1306/ILI9341/NeoPixel/MPU6050, HX711, MFRC522, TinyGPSPlus, LoRa, RTClib, SD, Keypad, Stepper, IRremote) รองรับ struct, ESP-NOW, WiFiUDP, WebServer/HTTPClient ระหว่างหลายบอร์ด แต่ยังไม่รองรับ class/template ที่เขียนเอง และไม่ได้จำลองไฟฟ้าแบบละเอียด ควรทดสอบกับบอร์ดจริงก่อนใช้งานจริง</p>
       <div class="foot"><button class="btn pri" id="abClose">ปิด</button></div>`;
     m.hidden = false; $('abClose').onclick = () => { m.hidden = true; };
   }
@@ -257,7 +305,8 @@
     });
     ed.onChange((kind) => {
       if (kind === 'load') return;
-      if (kind === 'board') { blocks.refreshPins(); if (!ed.project.codeManual) regen(); syncModeUI(); }
+      if (kind === 'board') { blocks.refreshPins(); if (!ed.project.codeManual) regen(); syncModeUI(); renderBoardSwitch(); }
+      if (kind === 'active' || kind === 'board-added') { if (!sim.running || kind === 'active') showProgram(); }
       if (kind !== 'sim') renderChecks();
       app.dirty();
     });

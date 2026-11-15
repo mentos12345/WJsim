@@ -2,15 +2,16 @@
  * Keeps line numbers so errors point at the user's code.
  * Supported: globals/locals of primitive & library types, arrays (incl. 2-D initialisers),
  * functions, #define, enum, casts, String methods, loops, switch, F(), sprintf/dtostrf.
- * Not supported: struct/class/template/namespace definitions, pointers arithmetic, references as out-params.
+ * Also: plain structs (struct / typedef struct) become small JS classes, simple lambdas, ESP-NOW/UDP/HTTP helpers.
+ * Not supported: class/template/namespace definitions, pointers arithmetic, references as out-params.
  */
 (function () {
   'use strict';
-  const PRIMS = ['long\\s+long', 'long\\s+int', 'long', 'int', 'short', 'char', 'float', 'double', 'bool', 'boolean', 'byte', 'word', 'String', 'size_t', 'u?int(?:8|16|32|64)_t', 'auto'];
+  const PRIMS = ['long\\s+long', 'long\\s+int', 'long', 'int', 'short', 'char', 'float', 'double', 'bool', 'boolean', 'byte', 'word', 'String', 'size_t', 'u?int(?:8|16|32|64)_t', 'esp_err_t', 'esp_now_send_status_t', 'wl_status_t', 'auto'];
   const INTS = /^(?:unsigned|signed)?\s*(long\s+long|long\s+int|long|int|short|byte|word|size_t|u?int(?:8|16|32|64)_t|unsigned)$/;
   const CLASSES = ['DHT', 'Servo', 'ESP32Servo', 'LiquidCrystal_I2C', 'LiquidCrystal', 'Adafruit_SSD1306', 'Adafruit_ILI9341', 'Adafruit_NeoPixel', 'WiFiClient', 'WiFiClientSecure',
     'PubSubClient', 'Adafruit_MPU6050', 'sensors_event_t', 'HX711', 'MFRC522', 'TinyGPSPlus', 'SoftwareSerial', 'HardwareSerial', 'RTC_DS1307', 'RTC_DS3231', 'DateTime', 'File',
-    'Keypad', 'Stepper', 'IRrecv', 'TimeSpan', 'IPAddress'];
+    'Keypad', 'Stepper', 'IRrecv', 'TimeSpan', 'IPAddress', 'WebServer', 'ESP8266WebServer', 'HTTPClient', 'WiFiUDP', 'esp_now_peer_info_t'];
 
   class TranspileError extends Error { constructor(msg, line) { super(msg); this.line = line; } }
 
@@ -109,7 +110,7 @@
 
   function transpile(src) {
     let s = stripComments(src.replace(/\r\n?/g, '\n'));
-    const userTypes = [];
+    const userTypes = [], typeAlias = {};
     // --- preprocessor (line by line, keeps line count)
     s = s.split('\n').map((ln) => {
       const t = ln.trim();
@@ -126,8 +127,51 @@
     lintSemicolons(s);
     s = hoistStatics(s);
 
-    // unsupported constructs
-    const bad = /\b(struct|class|template|namespace|typedef|union|operator)\b/.exec(s);
+    // structs → classes with default-initialised fields (one line, newlines kept)
+    const structFields = {};
+    s = s.replace(/\b(typedef\s+)?struct\s+(\w*)\s*\{([^{}]*)\}\s*(\w*)\s*;/g, (m, td, tag, body, alias) => {
+      const name = td ? alias || tag : tag;
+      if (!name) return m;
+      const fields = [];
+      body.split(';').map((x) => x.trim()).filter(Boolean).forEach((f) => {
+        const fm = /^(?:const\s+)?((?:unsigned\s+|signed\s+)?[\w]+(?:\s+(?:long|int))?)\s*([*&]*)\s*(.+)$/s.exec(f.replace(/\s+/g, ' '));
+        if (!fm) return;
+        splitTop(fm[3], ',').forEach((d) => {
+          const dm = /^\s*[*&]*\s*(\w+)\s*((?:\[[^\]]*\]\s*)*)(?:=\s*(.*))?$/.exec(d);
+          if (!dm) return;
+          const type = fm[1].trim(), dims = (dm[2].match(/\[([^\]]*)\]/g) || []).map((x) => x.slice(1, -1).trim());
+          const isStr = type === 'String' || ((type === 'char') && (dims.length === 1 || fm[2]));
+          let v;
+          if (dm[3] !== undefined) v = dm[3].trim().startsWith('{') ? bracesToArrays(dm[3].trim()) : dm[3].trim();
+          else if (isStr) v = '""';
+          else if (dims.length) v = `__arr([${dims.join(',')}], 0)`;
+          else if (/^(bool|boolean)$/.test(type)) v = 'false';
+          else if (/^(int|long|short|byte|word|float|double|char|unsigned|size_t|u?int\d+_t|unsigned long|unsigned int|long long)$/.test(type)) v = '0';
+          else v = `(typeof ${type} === "function" ? new ${type}() : 0)`;
+          fields.push([dm[1], v]);
+        });
+      });
+      structFields[name] = fields.map((f) => f[0]);
+      if (tag && tag !== name) { userTypes.push(tag); structFields[tag] = structFields[name]; }
+      userTypes.push(name);
+      const nl = '\n'.repeat((m.match(/\n/g) || []).length);
+      return `class ${name} { constructor() { ${fields.map(([k, v]) => `this.${k} = ${v};`).join(' ')} } }` + (tag && tag !== name ? ` const ${tag} = ${name};` : '') + nl;
+    });
+    // `struct Foo x;` → `Foo x;`
+    s = s.replace(/\bstruct\s+(?=\w+\s*[*&]*\s*\w)/g, '');
+    // typedef of a simple type: drop it and treat the alias as that type later
+    s = s.replace(/\btypedef\s+((?:unsigned\s+)?\w+)\s+(\w+)\s*;/g, (m, t, a) => { typeAlias[a] = t; return ''; });
+    Object.keys(typeAlias).forEach((a) => { s = s.replace(new RegExp('\\b' + a + '\\b', 'g'), typeAlias[a]); });
+    // simple lambdas  [](...) { … }  /  [&](...) { … }
+    s = s.replace(/\[\s*[&=]?\s*\]\s*\(([^()]*)\)\s*(?:->\s*\w+\s*)?\{/g, (m, params) => {
+      const ps = params.trim() === '' || params.trim() === 'void' ? [] : params.split(',').map((x) => { const id = /(\w+)\s*(?:\[[^\]]*\]\s*)*$/.exec(x.split('=')[0].trim()); return id ? id[1] : '_'; });
+      return `async (${ps.join(', ')}) => {`;
+    });
+
+    // unsupported constructs (class keyword produced above for structs is allowed)
+    const badRe = /\b(struct|class|template|namespace|typedef|union|operator)\b/g;
+    let bad;
+    while ((bad = badRe.exec(s)) && bad[1] === 'class' && /^class \w+ \{ constructor\(\)/.test(s.slice(bad.index))) { /* generated */ }
     if (bad) throw new TranspileError(`ยังไม่รองรับ '${bad[1]}' ในตัวจำลอง (ใช้ตัวแปร/ฟังก์ชันธรรมดาแทน)`, lineAt(s, bad.index));
     s = s.replace(/\bstd::/g, '');
     const colon = /\w::\w/.exec(s);
@@ -155,7 +199,12 @@
 
     // pointer casts like (char*)payload are dropped; byte arrays stringify themselves
     s = s.replace(/\(\s*(?:const\s+)?(?:char|byte|uint8_t|unsigned\s+char|void)\s*\*\s*\)\s*/g, '');
-    s = s.replace(/\bstrcpy\s*\(\s*(\w+)\s*,/g, '$1 = String(').replace(/\bstrcat\s*\(\s*(\w+)\s*,/g, '$1 += String(');
+    s = s.replace(/\b(?:strcpy|strncpy|strlcpy)\s*\(\s*([\w.\[\]]+)\s*,([^;]*?)(?:,\s*[^,;()]+)?\)\s*;/g, (m, dst, src) => (/^strcpy/.test(m) ? `${dst} = String(${src});` : `${dst} = String(${src}).slice(0, ${m.match(/,\s*([^,;()]+)\)\s*;$/)[1]} - 1);`))
+      .replace(/\bstrcat\s*\(\s*([\w.\[\]]+)\s*,/g, '$1 += String(');
+    // memcpy into a variable returns the new value (strings are immutable in JS)
+    s = s.replace(/(^|[;{}\n]\s*)memcpy\s*\(\s*&?\s*([\w.\[\]]+)\s*,/g, '$1$2 = memcpy($2,');
+    // X.read(buf, n) / readBytes(buf, n) fill a buffer
+    s = s.replace(/(?<![\w.])([\w.]+)\.(read|readBytes)\s*\(\s*([\w.\[\]]+)\s*,/g, '__readInto($1, (__v) => { $3 = __v; },');
     // casts:  (type) operand  → __int(...) / __char(...) / (...)
     const castRe = /\(\s*((?:unsigned\s+|signed\s+)?(?:long\s+long|long|int|short|char|float|double|byte|word|bool|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|size_t|String))\s*\)\s*(?=[\w(\u0001-])/g;
     let cm;
@@ -223,7 +272,11 @@
         const isCharStr = typeTxt === 'char' && (dims.length === 1 || isPtr);
         if (init !== null && init === '') throw new TranspileError('ค่าหลังเครื่องหมาย = หายไป', lineAt(s, from));
         if (init !== null) {
-          if (init.startsWith('{')) val = bracesToArrays(init);
+          if (init.startsWith('{') && isClass && !dims.length) {
+            const inner = init.slice(1, init.lastIndexOf('}')).trim(), names = structFields[typeTxt] || [];
+            const vals = inner ? splitTop(inner, ',').map((x) => x.trim()) : [];
+            val = vals.length && names.length ? `Object.assign(new ${typeTxt}(), {${vals.map((v, k) => `${names[k] || '_' + k}: ${v.startsWith('{') ? bracesToArrays(v) : v}`).join(', ')}})` : `new ${typeTxt}()`;
+          } else if (init.startsWith('{')) val = bracesToArrays(init);
           else if (INTS.test(typeTxt) && !dims.length && !isPtr) val = `__int(${init})`;
           else val = init;
         } else if (ctor !== null) {
@@ -254,7 +307,7 @@
     // awaits
     s = s.replace(/(?<![\w.])(delay|delayMicroseconds)\s*\(/g, 'await $1(');
     s = s.replace(/(?<![\w.])yield\s*\(\s*\)/g, 'await __y()');
-    s = s.replace(/(?<![\w.])(\w+)\.(step|waitForKey)\s*\(/g, 'await $1.$2(');
+    s = s.replace(/(?<![\w.])(\w+)\.(step|waitForKey|GET|POST|PUT|PATCH|sendRequest)\s*\(/g, 'await $1.$2(');
     if (userFns.length) {
       const fr = new RegExp(`(?<![\\w.])(${userFns.join('|')})\\s*\\(`, 'g');
       s = s.replace(fr, (m, name, off, all) => (/function\s+$/.test(all.slice(Math.max(0, off - 12), off)) ? m : `await ${name}(`));

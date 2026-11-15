@@ -32,8 +32,25 @@
   };
 
   /* ---------- project ---------- */
-  ed.board = () => ed.project.parts.find((p) => P[p.type] && P[p.type].kind === 'board');
-  ed.boardDef = () => { const b = ed.board(); return b ? B[P[b.type].board] : null; };
+  // several boards may sit on one canvas; the "active" one is the board whose code is being edited
+  ed.isBoard = (p) => !!(p && P[p.type] && P[p.type].kind === 'board');
+  ed.boards = () => ed.project.parts.filter(ed.isBoard);
+  ed.board = () => { const bs = ed.boards(); return bs.find((b) => b.id === ed.project.activeBoard) || bs[0]; };
+  ed.boardDef = (b) => { b = b || ed.board(); return b ? B[P[b.type].board] : null; };
+  ed.boardName = (b) => b ? (b.name || B[P[b.type].board].name) : '';
+  ed.setActiveBoard = function (id) {
+    const b = ed.part(id); if (!ed.isBoard(b) || ed.project.activeBoard === id) return;
+    ed.project.activeBoard = id; markActive(); changed('active');
+  };
+  function markActive() {
+    const a = ed.board();
+    ed.boards().forEach((b) => { const n = ed.els[b.id]; if (n) n.wrap.classList.toggle('active-board', b === a && ed.boards().length > 1); });
+  }
+  function nextBoardName(type) {
+    const short = { esp32: 'ESP32', uno: 'Uno', nano: 'Nano', mega: 'Mega', rp2040: 'RP2040', franzininho: 'ATtiny85' }[P[type].board] || 'Board';
+    const used = new Set(ed.boards().map((b) => b.name));
+    for (let i = 1; ; i++) if (!used.has(`${short} #${i}`)) return `${short} #${i}`;
+  }
   ed.part = (id) => ed.project.parts.find((p) => p.id === id);
   ed.def = (p) => P[p.type];
   ed.isBasic = () => !ed.project || ed.project.mode === 'basic';
@@ -48,15 +65,16 @@
     const d = P[type];
     if (!d) return null;
     if (!opts.noUndo) snapshot();
-    if (d.kind === 'board') {
-      const old = ed.board();
-      if (old) { ed.setBoard(d.board, true); return old; }
-    }
     const p = { id: opts.id || uid(), type, x: Math.round(x), y: Math.round(y), rot: opts.rot || 0, attrs: Object.assign({}, d.attrs, opts.attrs || {}), sim: {} };
+    if (d.kind === 'board') {
+      p.name = opts.name || nextBoardName(type);
+      ed.boards().forEach((b) => { if (!b.name) b.name = nextBoardName(b.type); });
+    }
     Object.entries(d.sim).forEach(([k, v]) => { p.sim[k] = opts.sim && k in opts.sim ? opts.sim[k] : v[0]; });
     ed.project.parts.push(p);
     mountPart(p);
     if (ed.isBasic() && !opts.noAutoWire && d.kind !== 'board') autoWire(p);
+    if (d.kind === 'board') { ed.project.activeBoard = p.id; markActive(); refreshBoardLabels(); if (!opts.silent) changed('board-added'); }
     if (!opts.silent) { select(p.id); renderWires(); changed(); }
     return p;
   };
@@ -69,6 +87,7 @@
     ed.project.wires = ed.project.wires.filter((w) => w.a.p !== id && w.b.p !== id);
     const n = ed.els[id]; if (n) n.wrap.remove(); delete ed.els[id];
     if (ed.sel === id) select(null);
+    if (ed.isBoard(p)) { if (ed.project.programs) delete ed.project.programs[id]; if (ed.project.activeBoard === id) ed.project.activeBoard = ed.board() && ed.board().id; markActive(); refreshBoardLabels(); changed('active'); }
     renderWires(); changed();
   };
 
@@ -105,18 +124,18 @@
   }
 
   /* ---------- board helpers ---------- */
-  ed.boardPins = function () {
-    const b = ed.board(); if (!b) return [];
+  ed.boardPins = function (b) {
+    b = b || ed.board(); if (!b) return [];
     return ed.els[b.id] ? ed.els[b.id].el.pinInfo : [];
   };
-  ed.boardPinForGpio = function (gpio) {
-    const bd = ed.boardDef();
-    const pin = ed.boardPins().find((q) => bd.gpio(base(q.name)) === gpio);
+  ed.boardPinForGpio = function (gpio, b) {
+    b = b || ed.board(); const bd = ed.boardDef(b); if (!bd) return null;
+    const pin = ed.boardPins(b).find((q) => bd.gpio(base(q.name)) === gpio);
     return pin ? pin.name : null;
   };
-  ed.gpioOfBoardPin = function (name) { const bd = ed.boardDef(); return bd ? bd.gpio(base(name)) : undefined; };
-  function powerPinOfBoard(kind, forType) {
-    const pins = ed.boardPins();
+  ed.gpioOfBoardPin = function (name, b) { const bd = ed.boardDef(b); return bd ? bd.gpio(base(name)) : undefined; };
+  function powerPinOfBoard(kind, forType, b) {
+    const pins = ed.boardPins(b);
     if (kind === 'GND') { const g = pins.filter((q) => q.signals && q.signals.some((s) => s.signal === 'GND')); return g.length ? g[0].name : null; }
     const v = pins.filter((q) => q.signals && q.signals.some((s) => s.signal === 'VCC'));
     const want5 = FIVE_V.includes(forType);
@@ -138,15 +157,15 @@
       ed.project.parts = ed.project.parts.filter((p) => p !== old);
       if (ed.els[oldId]) ed.els[oldId].wrap.remove(); delete ed.els[oldId];
     }
-    const nb = { id: oldId || uid(), type: tag, x, y, rot: 0, attrs: {}, sim: {} };
-    ed.project.parts.unshift(nb); mountPart(nb);
+    const nb = { id: oldId || uid(), type: tag, x, y, rot: 0, attrs: {}, sim: {}, name: old && old.name ? old.name.replace(/^\S+/, nextBoardName(tag).split(' ')[0]) : nextBoardName(tag) };
+    ed.project.parts.unshift(nb); mountPart(nb); ed.project.activeBoard = nb.id; markActive(); refreshBoardLabels();
     // remap wires by gpio number / power type
     ed.project.wires = ed.project.wires.filter((w) => {
       for (const e of [w.a, w.b]) {
         if (e.p !== nb.id) continue;
         const m = map[e.pin]; let np = null;
-        if (m && m.power) np = powerPinOfBoard(m.power, null);
-        else if (m && m.gpio !== undefined) np = ed.boardPinForGpio(m.gpio);
+        if (m && m.power) np = powerPinOfBoard(m.power, null, nb);
+        else if (m && m.gpio !== undefined) np = ed.boardPinForGpio(m.gpio, nb);
         if (!np) return false;
         e.pin = np;
       }
@@ -185,15 +204,16 @@
   }
 
   ed.autoPower = function () {
-    const b = ed.board(); if (!b) return 0;
+    if (!ed.board()) return 0;
     snapshot();
     const nets = ed.nets();
     let n = 0;
     ed.project.parts.forEach((p) => {
-      if (p === b) return;
+      if (ed.isBoard(p)) return;
       const d = P[p.type], info = ed.els[p.id] ? ed.els[p.id].el.pinInfo : [];
+      const b = boardOfPart(p, nets) || ed.board();
       const ps = powerState(p, nets);
-      const add = (pin, kind) => { const bp = powerPinOfBoard(kind, p.type); if (bp) { ed.addWire({ p: p.id, pin }, { p: b.id, pin: bp }, { silent: true, noUndo: true }); n++; } };
+      const add = (pin, kind) => { const bp = powerPinOfBoard(kind, p.type, b); if (bp) { ed.addWire({ p: p.id, pin }, { p: b.id, pin: bp }, { silent: true, noUndo: true }); n++; } };
       if (ps.needV && !ps.v) add(ps.vPins.find((x) => x === '3V3' && !FIVE_V.includes(p.type)) || ps.vPins.find((x) => /VIN|5V/.test(x) && FIVE_V.includes(p.type)) || ps.vPins[0], 'VCC');
       if (ps.needG && !ps.g) add(ps.gPins[0], 'GND');
       if (d.kind === 'button') {
@@ -219,7 +239,7 @@
     const f = (k) => { if (!(k in parent)) parent[k] = k; while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k]; } return k; };
     const u = (a, b) => { const x = f(a), y = f(b); if (x !== y) parent[x] = y; };
     const key = (id, pin) => id + ':' + pin;
-    const b = ed.board(), basic = ed.isBasic();
+    const basic = ed.isBasic();
     const GND = '#GND', VCC = '#VCC';
     f(GND); f(VCC);
     const connected = new Set();
@@ -228,7 +248,7 @@
       const d = P[p.type], info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
       // duplicate pin names (GND.1, GND.2, 12.2 …) are the same node
       info.forEach((q) => { if (q.name !== base(q.name)) u(key(p.id, q.name), key(p.id, base(q.name))); });
-      if (p === b) {
+      if (ed.isBoard(p)) {
         info.forEach((q) => { const s = q.signals && q.signals.find((x) => x.type === 'power'); if (s) u(key(p.id, q.name), s.signal === 'GND' ? GND : VCC); });
         return;
       }
@@ -240,22 +260,33 @@
         if (d.kind === 'loadcell') ['E+', 'E-', 'A-', 'A+'].forEach((x) => connected.add(key(p.id, x)));
       }
     });
+    const memoPins = {};
     const api = {
       find: f, GND, VCC,
       netOf: (id, pin) => f(key(id, pin)),
       hasGnd: (n) => n === f(GND), hasVcc: (n) => n === f(VCC),
       isConnected: (id, pin) => connected.has(key(id, pin)) || (basic && (P[ed.part(id).type].tie || {})[pin] !== undefined),
-      gpioNet: (g) => { const bp = ed.boardPinForGpio(g); return bp && b ? f(key(b.id, bp)) : null; },
+      gpioNet: (g, boardId) => { const b = boardId ? ed.part(boardId) : ed.board(); const bp = b && ed.boardPinForGpio(g, b); return bp ? f(key(b.id, bp)) : null; },
       members: (n) => Object.keys(parent).filter((k) => !k.startsWith('#') && f(k) === n).map((k) => { const i = k.indexOf(':'); return { p: k.slice(0, i), pin: k.slice(i + 1) }; }),
-      gpiosOn: (n) => {
-        if (!b) return [];
-        return api.members(n).filter((m) => m.p === b.id).map((m) => ed.gpioOfBoardPin(m.pin)).filter((g) => g !== undefined);
+      // gpios on net n: of one board when boardId is given, otherwise of any board
+      gpiosOn: (n, boardId) => api.boardPinsOn(n).filter((x) => !boardId || x.board === boardId).map((x) => x.gpio),
+      boardPinsOn: (n) => {
+        if (!memoPins[n]) memoPins[n] = api.members(n).map((m) => ({ m, b: ed.part(m.p) })).filter((x) => ed.isBoard(x.b))
+          .map((x) => ({ board: x.b.id, pin: x.m.pin, gpio: ed.gpioOfBoardPin(x.m.pin, x.b) })).filter((x) => x.gpio !== undefined);
+        return memoPins[n];
       },
       short: () => f(GND) === f(VCC)
     };
     return api;
   };
 
+  // the board a part's signal pins are wired to
+  function boardOfPart(p, nets) {
+    const info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
+    for (const q of info) { const hit = nets.boardPinsOn(nets.netOf(p.id, q.name))[0]; if (hit) return ed.part(hit.board); }
+    return null;
+  }
+  ed.boardOfPart = (p) => boardOfPart(p, ed.nets());
   /* which board GPIO a part pin is wired to (or undefined) */
   ed.gpioOf = function (partId, pin, nets) {
     nets = nets || ed.nets();
@@ -289,7 +320,7 @@
     const nets = ed.nets(), basic = ed.isBasic();
     if (nets.short()) out.push({ lvl: 'err', msg: 'ไฟลัดวงจร: ขา VCC ต่อถึง GND โดยตรง ระวังบอร์ดเสียหาย' });
     ed.project.parts.forEach((p) => {
-      if (p === b) return;
+      if (p === b || ed.isBoard(p)) return;
       const d = P[p.type], name = d.name, info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
       if (basic && d.level !== 'basic') out.push({ lvl: 'warn', part: p.id, msg: `${name} เป็นอุปกรณ์ของโหมด Advanced` });
       if (!basic) {
@@ -347,6 +378,7 @@
     applyAttrs(el, p);
     const hit = document.createElement('div'); hit.className = 'hit';
     wrap.appendChild(el); wrap.appendChild(hit);
+    if (d.kind === 'board') { const lb = document.createElement('div'); lb.className = 'blabel'; wrap.appendChild(lb); }
     layer().appendChild(wrap);
     ed.els[p.id] = { wrap, el, w: 0, h: 0 };
     el.addEventListener('pininfo-change', () => { layoutPart(p); renderWires(); });
@@ -445,9 +477,27 @@
   ed.renderWires = renderWires;
   function rebuild() {
     layer().innerHTML = ''; ed.els = {};
+    ed.boards().forEach((b) => { if (!b.name) b.name = nextBoardName(b.type); });
     ed.project.parts.forEach(mountPart);
+    markActive(); refreshBoardLabels();
     renderWires(); renderProps();
   }
+  // network identity of each simulated board: fixed per position so sketches can hard-code them
+  ed.netInfo = function (b) {
+    const i = Math.max(0, ed.boards().indexOf(b));
+    return { mac: '24:0A:C4:00:00:' + (i + 1).toString(16).toUpperCase().padStart(2, '0'), macBytes: [0x24, 0x0A, 0xC4, 0, 0, i + 1], ip: '192.168.1.' + (101 + i) };
+  };
+  function refreshBoardLabels() {
+    const many = ed.boards().length > 1;
+    ed.boards().forEach((b) => {
+      const n = ed.els[b.id]; if (!n) return;
+      const lb = n.wrap.querySelector('.blabel'); if (!lb) return;
+      const bd = ed.boardDef(b);
+      lb.textContent = ed.boardName(b) + (bd.wifi ? '  ·  ' + ed.netInfo(b).ip : '');
+      lb.hidden = !many;
+    });
+  }
+  ed.refreshBoardLabels = refreshBoardLabels;
   ed.rebuild = rebuild;
 
   /* ---------- view ---------- */
@@ -485,6 +535,7 @@
       e.stopPropagation();
       if (ed.armed) { cancelArm(); }
       select(p.id);
+      if (ed.isBoard(p)) ed.setActiveBoard(p.id);
       const start = ed.toWorld(e.clientX, e.clientY), ox = p.x, oy = p.y;
       let moved = false;
       const mv = (ev) => {
@@ -742,12 +793,19 @@
     });
     if (d.kind === 'rfid') h += `<div class="row"><label>UID บัตร</label><input data-rfid value="${p.sim.uid || 'DE AD BE EF'}"></div><div class="btnrow"><button class="btn pri" data-act="tap">แตะบัตร</button></div>`;
     if (d.kind === 'sd') h += `<div class="muted small" style="margin-top:6px">ดูไฟล์ที่เขียนได้ในแท็บ "ไฟล์ใน SD card" ด้านล่าง</div>`;
+    if (d.kind === 'board') {
+      const ni = ed.netInfo(p), bd = ed.boardDef(p), active = ed.board() === p;
+      h += `<div class="row"><label>ชื่อบอร์ด</label><input id="boardNameInput" value="${(p.name || '').replace(/"/g, '&quot;')}"></div>`;
+      if (bd.wifi) h += `<div class="pinlist"><b>MAC</b> ${ni.mac}<br><span class="mono">{${ni.macBytes.map((x) => '0x' + x.toString(16).toUpperCase().padStart(2, '0')).join(', ')}}</span><br><b>IP</b> ${ni.ip} (เมื่อต่อ WiFi)</div>`;
+      else h += `<div class="pinlist">บอร์ดนี้ไม่มี WiFi/ESP-NOW ส่งข้อมูลหาบอร์ดอื่นได้ด้วย Serial หรือ LoRa</div>`;
+      if (ed.boards().length > 1) h += `<div class="btnrow">${active ? '<span class="muted small">กำลังแก้โค้ดของบอร์ดนี้</span>' : '<button class="btn pri" data-act="editcode">แก้โค้ดของบอร์ดนี้</button>'}</div>`;
+    }
     // pin connections
     const nets = ed.nets(), info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
     if (d.kind !== 'board') {
       const rows = info.filter((q) => q.name === base(q.name) || !info.some((o) => o.name === base(q.name))).map((q) => {
-        const n = nets.netOf(p.id, q.name), g = nets.gpiosOn(n);
-        let to = g.length ? g.map((x) => ed.boardPinForGpio(x)).join(', ') : nets.hasGnd(n) ? 'GND' : nets.hasVcc(n) ? 'VCC' : '—';
+        const n = nets.netOf(p.id, q.name), g = nets.boardPinsOn(n), many = ed.boards().length > 1;
+        let to = g.length ? g.map((x) => (many ? ed.boardName(ed.part(x.board)) + ' ' : '') + x.pin.replace(/\.\d+$/, '')).join(', ') : nets.hasGnd(n) ? 'GND' : nets.hasVcc(n) ? 'VCC' : '—';
         if (ed.isBasic() && ((d.tie || {})[q.name] || (q.signals || []).some((s) => s.type === 'power'))) to += ' (อัตโนมัติ)';
         return `<b>${q.name}</b> → ${to}`;
       });
@@ -766,6 +824,8 @@
     const tap = box.querySelector('[data-act=tap]'); if (tap) tap.onclick = () => { p.sim.tap = Date.now(); if (IOTF.sim) IOTF.sim.event('rfid', p); };
     const rot = box.querySelector('[data-act=rot]'); if (rot) rot.onclick = ed.rotateSel;
     const del = box.querySelector('[data-act=del]'); if (del) del.onclick = () => ed.removePart(p.id);
+    const bn = box.querySelector('#boardNameInput'); if (bn) bn.onchange = () => { p.name = bn.value.trim() || nextBoardName(p.type); refreshBoardLabels(); changed('active'); };
+    const ec = box.querySelector('[data-act=editcode]'); if (ec) ec.onclick = () => { ed.setActiveBoard(p.id); renderProps(); };
   }
   ed.renderProps = renderProps;
   const fmt = (v, step) => (+v).toFixed(step < 1 ? (String(step).split('.')[1] || '').length : 0);

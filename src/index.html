@@ -43,6 +43,7 @@
       <svg id="wires" xmlns="http://www.w3.org/2000/svg"></svg>
       <div id="partsLayer"></div>
       <svg id="wireOverlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="radioLayer" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
     <div id="wireTools">
       <select id="wireStyle" title="รูปแบบสาย"><option value="ortho">สายหักฉาก</option><option value="straight">สายตรง</option><option value="curve">สายโค้ง</option></select>
@@ -62,6 +63,7 @@
 
   <div class="splitter v" id="splitRight"></div>
   <aside id="right">
+    <div id="boardSwitch" hidden></div>
     <nav class="tabs" id="rightTabs">
       <button data-tab="blocks" class="on">Block</button>
       <button data-tab="code">C++</button>
@@ -82,7 +84,10 @@
       <h4>ข้อความ MQTT ล่าสุด</h4>
       <div id="mqttLog" class="log"></div>
       <div class="pubrow"><input id="pubTopic" placeholder="topic"><input id="pubMsg" placeholder="ข้อความ"><button class="tb small" id="btnPub">ส่ง</button></div>
-      <p class="muted small">MQTT broker จำลองอยู่ในแอป ไม่ได้ส่งข้อมูลออกอินเทอร์เน็ต เปิดหลายหน้าต่าง (เมนูไฟล์ → หน้าต่างใหม่) เพื่อให้หลายบอร์ดคุยกันได้</p>
+      <h4>เปิดเว็บของบอร์ด (HTTP)</h4>
+      <div class="pubrow"><input id="httpUrl" placeholder="http://192.168.1.101/" value="http://192.168.1.101/"><button class="tb small" id="btnHttp">เปิด</button></div>
+      <pre id="httpOut" class="log mono"></pre>
+      <p class="muted small">เครือข่ายจำลองอยู่ในแอป ไม่ได้ส่งข้อมูลออกอินเทอร์เน็ต วางบอร์ดหลายตัวบนวงจรเดียวกันเพื่อให้ส่งข้อมูลหากันได้ (ESP-NOW, UDP, HTTP, MQTT, LoRa) หรือเปิดหลายหน้าต่าง (เมนูไฟล์ → หน้าต่างใหม่)</p>
     </div>
     <div class="pane" id="pane-check" hidden>
       <div class="codebar"><span class="muted small">ปัญหาของวงจร</span><div class="spacer"></div><button class="tb small" id="btnAutoPower">⚡ ต่อไฟ/กราวด์ให้อัตโนมัติ</button></div>

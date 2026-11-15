@@ -6,14 +6,17 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-  const sim = {
-    running: false, gen: 0, out: {}, listeners: [], timers: [], ints: [], tones: {}, sd: {}, serialIn: '',
-    loraRx: [], warnOnce: new Set(), partState: {}
-  };
+  // one simulated device per board on the canvas; each runs its own program
+  const sim = { running: false, gen: 0, listeners: [], timers: [], sd: {}, warnOnce: new Set(), partState: {}, devices: [], devByBoard: {} };
   IOTF.sim = sim;
 
   /* ---------- serial monitor ---------- */
   let serBuf = '', serTimer = null;
+  // Arduino String methods that JS strings lack
+  [['toInt', function () { return parseInt(this, 10) || 0; }], ['toFloat', function () { return parseFloat(this) || 0; }], ['toDouble', function () { return parseFloat(this) || 0; }],
+    ['equals', function (o) { return String(this) === String(o); }], ['equalsIgnoreCase', function (o) { return String(this).toLowerCase() === String(o).toLowerCase(); }],
+    ['compareTo', function (o) { return String(this) < String(o) ? -1 : String(this) > String(o) ? 1 : 0; }], ['isEmpty', function () { return this.length === 0; }]
+  ].forEach(([k, f]) => { if (!String.prototype[k]) Object.defineProperty(String.prototype, k, { value: f, configurable: true, writable: true }); });
   function serialWrite(text, cls) {
     if (cls) { flushSerial(); const el = document.getElementById('serialOut'); const s = document.createElement('span'); s.className = cls; s.textContent = text; el.appendChild(s); trimSerial(el); el.scrollTop = el.scrollHeight; return; }
     serBuf += text;
@@ -27,22 +30,30 @@
   }
   function trimSerial(el) { while (el.childNodes.length > 400) el.removeChild(el.firstChild); }
   sim.log = (t, cls) => serialWrite(t + '\n', cls || 'sinfo');
-  function warn(key, msg) { if (sim.warnOnce.has(key)) return; sim.warnOnce.add(key); serialWrite('⚠ ' + msg + '\n', 'swarn'); }
+  // with several boards running, every line gets the board's name in front
+  function serialWriteDev(dev, text, cls) {
+    if (dev && sim.devices.length > 1) {
+      let out = '';
+      for (const ch of String(text)) { if (dev.atLineStart) { out += '[' + dev.name + '] '; dev.atLineStart = false; } out += ch; if (ch === '\n') dev.atLineStart = true; }
+      text = out;
+    }
+    serialWrite(text, cls);
+  }
+  function warnDev(dev, key, msg) { const k = (dev ? dev.id : '') + key; if (sim.warnOnce.has(k)) return; sim.warnOnce.add(k); if (dev) dev.atLineStart = true; serialWriteDev(dev, '⚠ ' + msg + '\n', 'swarn'); }
 
   /* ---------- circuit queries ---------- */
-  function bd() { return ed.boardDef(); }
   function powered(p) { return ed.isPowered(p, sim.nets); }
   function members(net) {
     if (!sim.memo[net]) sim.memo[net] = sim.nets.members(net).map((m) => ({ part: ed.part(m.p), pin: m.pin })).filter((m) => m.part);
     return sim.memo[net];
   }
   const netOf = (p, pin) => sim.nets.netOf(p.id, pin);
-  const gpioNet = (g) => sim.nets.gpioNet(g);
+  const gpioNetOf = (dev, g) => sim.nets.gpioNet(g, dev.id);
   function partsOfKind(kinds) { return ed.project.parts.filter((p) => kinds.includes(P[p.type].kind)); }
-  function findPart(kinds, pin, gpio) {
+  function findPartDev(kinds, pin, gpio, dev) {
     const list = partsOfKind(kinds);
     if (gpio !== undefined && gpio !== null) {
-      const n = gpioNet(gpio);
+      const n = gpioNetOf(dev, gpio);
       const hit = list.find((p) => n && netOf(p, pin) === n);
       if (hit) return hit;
       if (!ed.isBasic()) return null;
@@ -94,9 +105,11 @@
     if (net == null || depth > 4) return undefined;
     if (sim.nets.hasGnd(net)) return 0;
     if (sim.nets.hasVcc(net)) return 1;
-    for (const g of sim.nets.gpiosOn(net)) {
-      if (g === except) continue;
-      const o = sim.out[g];
+    const pins = sim.nets.boardPinsOn(net);
+    for (const x of pins) {
+      const dv = sim.devByBoard[x.board]; if (!dv) continue;
+      if (except && except.dev === dv && except.g === x.gpio) continue;
+      const o = dv.out[x.gpio];
       if (o && o.mode === 1) return o.v > 0 ? 1 : 0;
     }
     for (const m of members(net)) {
@@ -104,11 +117,11 @@
       const v = partDrive(m.part, m.pin, depth);
       if (v !== undefined) return v;
     }
-    for (const g of sim.nets.gpiosOn(net)) { const o = sim.out[g]; if (o && (o.mode === 2 || o.pull)) return 1; if (o && o.mode === 3) return 0; }
+    for (const x of pins) { const dv = sim.devByBoard[x.board], o = dv && dv.out[x.gpio]; if (o && (o.mode === 2 || o.pull)) return 1; if (o && o.mode === 3) return 0; }
     return undefined;
   }
   function pwmOf(net) {
-    for (const g of sim.nets.gpiosOn(net)) { const o = sim.out[g]; if (o && o.mode === 1) return o.v; }
+    for (const x of sim.nets.boardPinsOn(net)) { const dv = sim.devByBoard[x.board], o = dv && dv.out[x.gpio]; if (o && o.mode === 1) return o.v; }
     if (sim.nets.hasVcc(net)) return 1;
     return 0;
   }
@@ -118,8 +131,8 @@
     let lo = 0, hi = 3.3; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) < ppm) lo = m; else hi = m; } return (lo + hi) / 2;
   }
   // voltage on a net, in volts
-  function netVoltage(net) {
-    const B = bd(), V = B.vref;
+  function netVoltageDev(net, dev) {
+    const B = (dev || sim.devices[0]).bd, V = B.vref;
     for (const m of members(net)) {
       const p = m.part, d = P[p.type], s = p.sim, e = el(p);
       if (d.kind === 'board') continue;
@@ -145,9 +158,9 @@
     if (typeof pin === 'string' && /^\d+$/.test(pin)) pin = +pin;
     return pin;
   }
-  function analogGpio(pin) {
+  function analogGpioDev(dev, pin) {
     pin = toGpio(pin);
-    const B = bd();
+    const B = dev.bd;
     if (B !== IOTF.BOARDS.esp32 && typeof pin === 'number') {
       const first = B.consts.A0;
       if (first !== undefined && pin < first && pin < (B === IOTF.BOARDS.mega ? 16 : 8)) return first + pin;
@@ -158,13 +171,13 @@
   /* ---------- outputs → parts ---------- */
   function refresh() {
     if (!sim.running) return;
-    const B = bd(), board = ed.board();
     ed.project.parts.forEach((p) => {
       const d = P[p.type], e = el(p); if (!e) return;
       const on = powered(p);
       switch (d.kind) {
         case 'board': {
-          const o = sim.out[B.led.pin]; e[B.led.prop] = !!(o && o.mode === 1 && o.v > 0);
+          const dv = sim.devByBoard[p.id]; if (!dv) break;
+          const B = dv.bd, o = dv.out[B.led.pin]; e[B.led.prop] = !!(o && o.mode === 1 && o.v > 0);
           if ('ledPower' in e) e.ledPower = true;
           break;
         }
@@ -191,7 +204,7 @@
           break;
         }
         case 'buzzer': {
-          const n = netOf(p, '2'), g = sim.nets.gpiosOn(n), tn = g.map((x) => sim.tones[x]).find(Boolean);
+          const n = netOf(p, '2'), tn = sim.nets.boardPinsOn(n).map((x) => sim.devByBoard[x.board] && sim.devByBoard[x.board].tones[x.gpio]).find(Boolean);
           const level = netLevel(n) === 1;
           e.hasSignal = !!(on && (tn || level));
           sound(p.id, on && tn ? tn.freq : 0);
@@ -205,7 +218,7 @@
       }
     });
   }
-  function safeCall(fn) { try { const r = fn(); if (r && r.catch) r.catch(onError); } catch (e) { onError(e); } }
+  function safeCallDev(fn, dev) { try { const r = fn(); if (r && r.catch) r.catch((e) => onError(e, dev)); } catch (e) { onError(e, dev); } }
 
   /* ---------- audio ---------- */
   let actx = null; const osc = {};
@@ -221,11 +234,11 @@
     } catch (e) { /* audio not available */ }
   }
 
-  function readPin(g) {
-    const o = sim.out[g];
+  function readPinDev(dev, g) {
+    const o = dev.out[g];
     if (o && o.mode === 1) return o.v > 0 ? 1 : 0;
-    const n = gpioNet(g);
-    const lv = netLevel(n, 0, null, g);
+    const n = gpioNetOf(dev, g);
+    const lv = netLevel(n, 0, null, { dev, g });
     if (lv !== undefined) return lv;
     if (o && (o.mode === 2 || o.pull)) return 1;
     return 0;
@@ -267,9 +280,26 @@
   }
 
   /* ---------- the environment the user program runs in ---------- */
-  function makeEnv() {
-    const B = bd(), board = ed.board();
+  function makeEnv(dev) {
+    const B = dev.bd, board = dev.part;
     const env = {};
+    // device-bound versions of the shared helpers
+    const gpioNet = (g) => gpioNetOf(dev, g);
+    const readPin = (g) => readPinDev(dev, g);
+    const findPart = (k, pin, g) => findPartDev(k, pin, g, dev);
+    const warn = (k, m) => warnDev(dev, k, m);
+    const serialWrite = (t, c) => serialWriteDev(dev, t, c);
+    const netVoltage = (n) => netVoltageDev(n, dev);
+    const analogGpio = (pin) => analogGpioDev(dev, pin);
+    const safeCall = (fn) => safeCallDev(fn, dev);
+    // parts that belong to this board: with several boards, only those wired to it (or wired to no board at all)
+    const touches = (p, boardId) => { const info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : []; return info.some((q) => sim.nets.boardPinsOn(netOf(p, q.name)).some((x) => !boardId || x.board === boardId)); };
+    const mine = (kinds) => {
+      const list = partsOfKind(kinds);
+      if (sim.devices.length < 2) return list;
+      const own = list.filter((p) => touches(p, dev.id));
+      return own.length ? own : list.filter((p) => !touches(p));
+    };
     const C = Object.assign({
       HIGH: 1, LOW: 0, INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, INPUT_PULLDOWN: 3, CHANGE: 1, FALLING: 2, RISING: 3,
       DEC: 10, HEX: 16, OCT: 8, BIN: 2, DHT11: 11, DHT21: 21, DHT22: 22, AM2301: 21,
@@ -292,14 +322,14 @@
 
     // --- core
     env.pinMode = (pin, mode) => {
-      const g = toGpio(pin), o = sim.out[g] || (sim.out[g] = { mode: 0, v: 0 });
+      const g = toGpio(pin), o = dev.out[g] || (dev.out[g] = { mode: 0, v: 0 });
       o.mode = mode; if (mode !== 1) o.v = 0;
       if (mode === 1 && (B.inputOnly || []).includes(g)) warn('io' + g, `GPIO${g} เป็นขาอินพุตอย่างเดียว ใช้เป็น OUTPUT ไม่ได้`);
     };
     env.digitalWrite = (pin, val) => {
-      const g = toGpio(pin), o = sim.out[g] || (sim.out[g] = { mode: 0, v: 0 });
+      const g = toGpio(pin), o = dev.out[g] || (dev.out[g] = { mode: 0, v: 0 });
       const v = val ? 1 : 0;
-      if (o.mode !== 1) { o.pull = !!v; if (!sim.pinModeHint.has(g)) { sim.pinModeHint.add(g); warn('pm' + g, `digitalWrite(${pin}) ก่อนเรียก pinMode(${pin}, OUTPUT) ขาจะยังไม่เป็นเอาต์พุต`); } return; }
+      if (o.mode !== 1) { o.pull = !!v; if (!dev.pinModeHint.has(g)) { dev.pinModeHint.add(g); warn('pm' + g, `digitalWrite(${pin}) ก่อนเรียก pinMode(${pin}, OUTPUT) ขาจะยังไม่เป็นเอาต์พุต`); } return; }
       o.v = v;
       const n = gpioNet(g);
       if (n && v && sim.nets.hasGnd(n)) warn('sh' + g, `ขา ${pin} สั่ง HIGH แต่ต่อลง GND ตรง ๆ (ลัดวงจร)`);
@@ -313,7 +343,7 @@
     env.analogReadMilliVolts = (pin) => Math.round(env.analogRead(pin) / B.adcMax * B.vref * 1000);
     env.analogReadResolution = () => { };
     env.analogWrite = (pin, val) => {
-      const g = toGpio(pin), o = sim.out[g] || (sim.out[g] = { mode: 1, v: 0 });
+      const g = toGpio(pin), o = dev.out[g] || (dev.out[g] = { mode: 1, v: 0 });
       o.mode = 1; o.v = clamp(val / 255, 0, 1);
     };
     const ledc = {};
@@ -322,17 +352,17 @@
     env.ledcAttach = (pin, freq, res) => { ledc['p' + pin] = { pin, res: res || 8, freq }; env.pinMode(pin, 1); return true; };
     env.ledcAttachChannel = (pin, freq, res) => env.ledcAttach(pin, freq, res);
     const ledcTarget = (x) => ledc['c' + x] || ledc['p' + x] || { pin: x, res: 8 };
-    env.ledcWrite = (x, duty) => { const c = ledcTarget(x); const o = sim.out[c.pin] || (sim.out[c.pin] = { mode: 1, v: 0 }); o.mode = 1; o.v = clamp(duty / (Math.pow(2, c.res) - 1), 0, 1); };
-    env.ledcWriteTone = (x, freq) => { const c = ledcTarget(x); if (freq > 0) sim.tones[c.pin] = { freq }; else delete sim.tones[c.pin]; env.ledcWrite(x, freq > 0 ? Math.pow(2, c.res - 1) : 0); return freq; };
+    env.ledcWrite = (x, duty) => { const c = ledcTarget(x); const o = dev.out[c.pin] || (dev.out[c.pin] = { mode: 1, v: 0 }); o.mode = 1; o.v = clamp(duty / (Math.pow(2, c.res) - 1), 0, 1); };
+    env.ledcWriteTone = (x, freq) => { const c = ledcTarget(x); if (freq > 0) dev.tones[c.pin] = { freq }; else delete dev.tones[c.pin]; env.ledcWrite(x, freq > 0 ? Math.pow(2, c.res - 1) : 0); return freq; };
     env.ledcDetachPin = env.ledcDetach = () => { };
     env.tone = (pin, freq, dur) => {
-      const g = toGpio(pin); sim.tones[g] = { freq: Math.max(31, freq) };
-      if (dur) { const t = setTimeout(() => { if (sim.tones[g] && sim.tones[g].freq === Math.max(31, freq)) delete sim.tones[g]; }, dur); sim.timers.push(t); }
+      const g = toGpio(pin); dev.tones[g] = { freq: Math.max(31, freq) };
+      if (dur) { const t = setTimeout(() => { if (dev.tones[g] && dev.tones[g].freq === Math.max(31, freq)) delete dev.tones[g]; }, dur); sim.timers.push(t); }
     };
-    env.noTone = (pin) => { delete sim.tones[toGpio(pin)]; };
+    env.noTone = (pin) => { delete dev.tones[toGpio(pin)]; };
     env.pulseIn = (pin, level, timeout) => {
       const g = toGpio(pin), n = gpioNet(g);
-      const hc = partsOfKind(['ultrasonic']).find((p) => netOf(p, 'ECHO') === n && powered(p));
+      const hc = mine(['ultrasonic']).find((p) => netOf(p, 'ECHO') === n && powered(p));
       if (!hc) return 0;
       const tr = sim.nets.gpiosOn(netOf(hc, 'TRIG'))[0];
       if (!ed.isBasic() && tr === undefined) return 0;
@@ -353,12 +383,12 @@
     function check() { if (!sim.running || sim.curGen !== sim.gen) throw STOP; }
     env.attachInterrupt = (n, fn, mode) => {
       let g = n;
-      if (B !== IOTF.BOARDS.esp32 && B !== IOTF.BOARDS.rp2040 && (n === 0 || n === 1) && sim.intPinHint !== n) g = n === 0 ? 2 : 3;
+      if (B !== IOTF.BOARDS.esp32 && B !== IOTF.BOARDS.rp2040 && (n === 0 || n === 1) && dev.intPinHint !== n) g = n === 0 ? 2 : 3;
       env.detachInterrupt(g);
-      sim.ints.push({ gpio: g, fn, mode, last: undefined });
+      dev.ints.push({ gpio: g, fn, mode, last: undefined });
     };
-    env.digitalPinToInterrupt = (pin) => { sim.intPinHint = pin; return toGpio(pin); };
-    env.detachInterrupt = (n) => { sim.ints = sim.ints.filter((i) => i.gpio !== n); };
+    env.digitalPinToInterrupt = (pin) => { dev.intPinHint = pin; return toGpio(pin); };
+    env.detachInterrupt = (n) => { dev.ints = dev.ints.filter((i) => i.gpio !== n); };
     env.interrupts = env.noInterrupts = () => { };
     // math
     env.map = (x, a, b, c, d) => Math.trunc((x - a) * (d - c) / (b - a) + c);
@@ -372,7 +402,6 @@
     env.strlen = (s) => String(s).length; env.strcmp = (a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0);
     env.strncmp = (a, b, n) => env.strcmp(String(a).slice(0, n), String(b).slice(0, n));
     env.strstr = (a, b) => (String(a).includes(b) ? String(a).slice(String(a).indexOf(b)) : null);
-    env.memset = () => { }; env.memcpy = () => { };
     env.makeKeymap = (k) => k;
     env.__int = (x) => (typeof x === 'string' ? (x.length === 1 && Number.isNaN(+x) ? x.charCodeAt(0) : x.length === 1 ? x.charCodeAt(0) : Math.trunc(+x) || 0) : typeof x === 'boolean' ? +x : Math.trunc(+x) || 0);
     env.__char = (x) => (typeof x === 'number' ? String.fromCharCode(x) : String(x).charAt(0));
@@ -392,7 +421,7 @@
     // --- Serial ports
     class HardwareSerial {
       constructor(n) { this.n = n; this.gps = null; this.gpsBuf = ''; }
-      begin(baud) { this.baud = baud; if (this.n !== 0) this.gps = partsOfKind(['gps'])[0] || null; return true; }
+      begin(baud) { this.baud = baud; if (this.n !== 0) this.gps = mine(['gps'])[0] || null; return true; }
       end() { }
       _out(t) { if (this.n === 0) serialWrite(t); }
       print(v, f) { const s = fmtNum(v, f); this._out(s); return s.length; }
@@ -405,16 +434,16 @@
         const now = performance.now();
         if (!this.gpsBuf && (!this.lastNmea || now - this.lastNmea >= 1000)) { this.lastNmea = now; this.gpsBuf = nmea(this.gps.sim); }
       }
-      available() { if (this.n === 0) return sim.serialIn.length; this._feed(); return this.gpsBuf.length; }
+      available() { if (this.n === 0) return dev.serialIn.length; this._feed(); return this.gpsBuf.length; }
       read() {
-        if (this.n === 0) { if (!sim.serialIn) return -1; const c = sim.serialIn[0]; sim.serialIn = sim.serialIn.slice(1); return c; }
+        if (this.n === 0) { if (!dev.serialIn) return -1; const c = dev.serialIn[0]; dev.serialIn = dev.serialIn.slice(1); return c; }
         this._feed(); if (!this.gpsBuf) return -1; const c = this.gpsBuf[0]; this.gpsBuf = this.gpsBuf.slice(1); return c;
       }
-      peek() { return this.n === 0 ? (sim.serialIn[0] ?? -1) : (this.gpsBuf[0] ?? -1); }
-      readString() { if (this.n === 0) { const s = sim.serialIn; sim.serialIn = ''; return s; } const s = this.gpsBuf; this.gpsBuf = ''; return s; }
-      readStringUntil(ch) { const src = this.n === 0 ? sim.serialIn : this.gpsBuf; const i = src.indexOf(ch); const s = i < 0 ? src : src.slice(0, i); if (this.n === 0) sim.serialIn = i < 0 ? '' : src.slice(i + 1); else this.gpsBuf = i < 0 ? '' : src.slice(i + 1); return s; }
-      parseInt() { const m = /-?\d+/.exec(sim.serialIn); if (!m) { sim.serialIn = ''; return 0; } sim.serialIn = sim.serialIn.slice(m.index + m[0].length); return +m[0]; }
-      parseFloat() { const m = /-?\d+(\.\d+)?/.exec(sim.serialIn); if (!m) { sim.serialIn = ''; return 0; } sim.serialIn = sim.serialIn.slice(m.index + m[0].length); return +m[0]; }
+      peek() { return this.n === 0 ? (dev.serialIn[0] ?? -1) : (this.gpsBuf[0] ?? -1); }
+      readString() { if (this.n === 0) { const s = dev.serialIn; dev.serialIn = ''; return s; } const s = this.gpsBuf; this.gpsBuf = ''; return s; }
+      readStringUntil(ch) { const src = this.n === 0 ? dev.serialIn : this.gpsBuf; const i = src.indexOf(ch); const s = i < 0 ? src : src.slice(0, i); if (this.n === 0) dev.serialIn = i < 0 ? '' : src.slice(i + 1); else this.gpsBuf = i < 0 ? '' : src.slice(i + 1); return s; }
+      parseInt() { const m = /-?\d+/.exec(dev.serialIn); if (!m) { dev.serialIn = ''; return 0; } dev.serialIn = dev.serialIn.slice(m.index + m[0].length); return +m[0]; }
+      parseFloat() { const m = /-?\d+(\.\d+)?/.exec(dev.serialIn); if (!m) { dev.serialIn = ''; return 0; } dev.serialIn = dev.serialIn.slice(m.index + m[0].length); return +m[0]; }
       setTimeout() { }
       valueOf() { return 1; }
     }
@@ -426,19 +455,20 @@
     env.ESP = { restart() { sim.log('ESP.restart() — เริ่มโปรแกรมใหม่'); setTimeout(() => IOTF.app.restart(), 50); throw STOP; }, getFreeHeap: () => 250000, getChipId: () => 0x1d2c3b, getEfuseMac: () => 0x24a1607b1d2cn, getChipModel: () => 'ESP32-D0WDQ6' };
 
     // --- WiFi
-    let wifi = { status: 0, ssid: '', ip: '0.0.0.0' };
+    const ni = ed.netInfo(board);
+    const wifi = dev.wifi = { status: 0, ssid: '', ip: '0.0.0.0' };
     env.WiFi = {
       mode() { return true; }, setHostname() { return true; }, persistent() { }, setAutoReconnect() { },
       begin(ssid, pass) {
         if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว เลือกบอร์ด ESP32 หรือ Nano RP2040 Connect`); wifi.status = 1; return 1; }
-        wifi = { status: 6, ssid: String(ssid || ''), ip: '0.0.0.0' };
-        IOTF.iot.setWifi('กำลังเชื่อมต่อ ' + wifi.ssid + '…');
-        sim.timers.push(setTimeout(() => { if (!sim.running) return; wifi.status = 3; wifi.ip = '192.168.1.' + (100 + Math.floor(Math.random() * 50)); IOTF.iot.setWifi(`WiFi: ${wifi.ssid} · IP ${wifi.ip}`, true); }, 1200));
+        Object.assign(wifi, { status: 6, ssid: String(ssid || ''), ip: '0.0.0.0' });
+        IOTF.iot.setWifi('กำลังเชื่อมต่อ ' + wifi.ssid + '…', false, dev.name);
+        sim.timers.push(setTimeout(() => { if (!sim.running) return; wifi.status = 3; wifi.ip = ni.ip; IOTF.iot.setWifi(`${wifi.ssid} · IP ${wifi.ip}`, true, dev.name); }, 1200));
         return wifi.status;
       },
-      status: () => wifi.status, isConnected: () => wifi.status === 3, disconnect() { wifi.status = 6; IOTF.iot.setWifi('WiFi: ตัดการเชื่อมต่อ'); return true; },
+      status: () => wifi.status, isConnected: () => wifi.status === 3, disconnect() { wifi.status = 6; IOTF.iot.setWifi('ตัดการเชื่อมต่อ', false, dev.name); return true; },
       reconnect() { return true; }, localIP: () => new IPAddress(wifi.ip), gatewayIP: () => new IPAddress('192.168.1.1'), subnetMask: () => new IPAddress('255.255.255.0'),
-      macAddress: () => '24:0A:C4:1D:2C:3B', RSSI: () => (wifi.status === 3 ? -52 - Math.floor(Math.random() * 6) : 0), SSID: () => wifi.ssid,
+      macAddress: () => ni.mac, RSSI: () => (wifi.status === 3 ? -52 - Math.floor(Math.random() * 6) : 0), SSID: () => wifi.ssid,
       softAP() { return true; }, softAPIP: () => new IPAddress('192.168.4.1'), scanNetworks: () => 1, waitForConnectResult: async () => { while (wifi.status !== 3) await env.delay(100); return 3; }
     };
     class IPAddress { constructor(s) { this.s = typeof s === 'string' ? s : [...arguments].join('.'); } toString() { return this.s; } }
@@ -454,6 +484,7 @@
       setBufferSize() { return true; } setKeepAlive() { return this; } setSocketTimeout() { return this; }
       connect(id) {
         if (wifi.status !== 3) { this.ok = false; return false; }
+        sim.clientDev[this.id] = dev;
         this.ok = true; this.cid = String(id || this.id);
         IOTF.iot.log(`อุปกรณ์ "${this.cid}" เชื่อมต่อ broker ${this.host || ''}`, 'd');
         return true;
@@ -462,7 +493,7 @@
       state() { return this.connected() ? 0 : -1; }
       disconnect() { this.ok = false; IOTF.iot.unsubscribeAll(this.id); }
       publish(topic, payload, retained) { if (!this.connected()) return false; IOTF.iot.publish(String(topic), Array.isArray(payload) ? payload.join('') : String(payload), !!retained, this.id); return true; }
-      subscribe(topic) { if (!this.connected()) return false; IOTF.iot.subscribe(this.id, String(topic), (t, m) => this.q.push([t, m])); return true; }
+      subscribe(topic) { if (!this.connected()) return false; IOTF.iot.subscribe(this.id, String(topic), (t, m, from) => { const src = sim.clientDev[from]; if (src && src !== dev) anim(src, dev, 'MQTT', '#4aa3ff'); this.q.push([t, m]); }); return true; }
       unsubscribe(topic) { IOTF.iot.unsubscribe(this.id, String(topic)); return true; }
       loop() {
         if (!this.connected()) return false;
@@ -507,7 +538,7 @@
       constructor(a, cols, rows) { this.cols = cols || 16; this.rows = rows || 2; this.cx = 0; this.cy = 0; }
       _find() {
         const want = this.cols >= 20 ? 'lcd2004' : 'lcd1602';
-        const list = partsOfKind(['lcd']); const p = list.find((q) => q.type === want) || list[0];
+        const list = mine(['lcd']); const p = list.find((q) => q.type === want) || list[0];
         if (!p) { warn('lcd', 'ไม่พบจอ LCD ในวงจร'); return null; }
         if (!busOk(p, ['SDA', 'SCL'])) { warn('lcdbus', 'จอ LCD ยังไม่ได้ต่อไฟหรือสาย SDA/SCL'); return null; }
         return p;
@@ -584,7 +615,7 @@
     env.Adafruit_SSD1306 = class extends GFX {
       constructor(w = 128, h = 64) { super(typeof w === 'number' ? w : 128, typeof h === 'number' ? h : 64); this.cv = document.createElement('canvas'); this.cv.width = 128; this.cv.height = 64; this.ctx = this.cv.getContext('2d'); this.inv = false; }
       begin() {
-        this.p = partsOfKind(['oled'])[0];
+        this.p = mine(['oled'])[0];
         if (!this.p) { warn('oled', 'ไม่พบจอ OLED ในวงจร'); return false; }
         if (!busOk(this.p, ['DATA', 'CLK'])) { warn('oledbus', 'จอ OLED ยังไม่ได้ต่อไฟหรือสาย SDA/SCL'); return false; }
         this.ctx.fillStyle = '#000'; this.ctx.fillRect(0, 0, 128, 64); return true;
@@ -603,7 +634,7 @@
     env.Adafruit_ILI9341 = class extends GFX {
       constructor() { super(240, 320); }
       begin() {
-        this.p = partsOfKind(['tft'])[0];
+        this.p = mine(['tft'])[0];
         if (!this.p) { warn('tft', 'ไม่พบจอ ILI9341 ในวงจร'); return; }
         if (!busOk(this.p, ['CS', 'D/C', 'MOSI', 'SCK'])) { warn('tftbus', 'จอ ILI9341 ยังไม่ได้ต่อไฟหรือสาย SPI ครบ (CS, D/C, MOSI, SCK)'); this.p = null; return; }
         const cv = el(this.p).canvas; this.ctx = cv ? cv.getContext('2d') : document.createElement('canvas').getContext('2d');
@@ -645,7 +676,7 @@
     // --- MPU6050
     env.sensors_event_t = class { constructor() { this.acceleration = { x: 0, y: 0, z: 0 }; this.gyro = { x: 0, y: 0, z: 0 }; this.temperature = 0; } };
     env.Adafruit_MPU6050 = class {
-      begin() { this.p = partsOfKind(['mpu'])[0]; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); }
+      begin() { this.p = mine(['mpu'])[0]; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); }
       setAccelerometerRange() { } setGyroRange() { } setFilterBandwidth() { } getAccelerometerRange() { return 2; } getGyroRange() { return 1; } getFilterBandwidth() { return 5; }
       setMotionDetectionThreshold() { } setMotionDetectionDuration() { } setInterruptPinLatch() { } setInterruptPinPolarity() { } setMotionInterrupt() { }
       getMotionInterruptStatus() { const s = this.p && this.p.sim; return !!(s && (Math.abs(s.ax) + Math.abs(s.ay) > 2)); }
@@ -689,7 +720,7 @@
     // --- GPS
     env.TinyGPSPlus = class {
       constructor() {
-        const g = () => partsOfKind(['gps'])[0]; const ok = () => { const p = g(); return !!(p && powered(p) && p.sim.sats >= 3); };
+        const g = () => mine(['gps'])[0]; const ok = () => { const p = g(); return !!(p && powered(p) && p.sim.sats >= 3); };
         this._chars = 0; this._upd = false; const self = this;
         this.location = { isValid: ok, isUpdated() { const u = self._upd; self._upd = false; return u && ok(); }, lat: () => (g() ? g().sim.lat : 0), lng: () => (g() ? g().sim.lng : 0), age: () => 100 };
         this.satellites = { value: () => (g() ? g().sim.sats : 0), isValid: () => !!g(), isUpdated: () => true };
@@ -712,7 +743,7 @@
       freq: 433e6, pkt: '', rx: null, cb: null,
       setPins() { }, setSPI() { }, setSPIFrequency() { }, setSyncWord() { }, setSpreadingFactor() { }, setSignalBandwidth() { }, setCodingRate4() { }, setTxPower() { }, enableCrc() { }, disableCrc() { }, setPreambleLength() { }, idle() { }, sleep() { }, receive() { }, explicitHeaderMode() { }, implicitHeaderMode() { },
       begin(f) {
-        this.freq = f; const p = partsOfKind(['lora'])[0]; this.p = p;
+        this.freq = f; const p = mine(['lora'])[0]; this.p = p; dev.lora = this;
         if (!p) { warn('lora', 'ไม่พบโมดูล LoRa SX1278 ในวงจร'); return 0; }
         if (!busOk(p, ['NSS', 'SCK', 'MOSI', 'MISO'])) { warn('lorabus', 'LoRa ยังไม่ได้ต่อไฟหรือสาย SPI ครบ (NSS, SCK, MOSI, MISO)'); return 0; }
         return 1;
@@ -720,8 +751,8 @@
       end() { }, beginPacket() { this.pkt = ''; return 1; },
       print(v, f) { this.pkt += fmtNum(v, f); return 1; }, println(v, f) { this.pkt += (v === undefined ? '' : fmtNum(v, f)) + '\n'; return 1; },
       write(v) { this.pkt += typeof v === 'number' ? String.fromCharCode(v) : String(v); return 1; },
-      endPacket() { if (!this.p) return 0; IOTF.iot.loraSend(this.pkt, this.freq); const led = el(this.p).q('.tx'); if (led) { led.setAttribute('fill', '#ff3b30'); setTimeout(() => led.setAttribute('fill', '#3b1111'), 150); } return 1; },
-      parsePacket() { if (!this.p || !sim.loraRx.length) return 0; this.rx = sim.loraRx.shift(); this.rxi = 0; return this.rx.text.length; },
+      endPacket() { if (!this.p) return 0; IOTF.iot.loraSend(this.pkt, this.freq); sim.loraLocal(dev, this.pkt, this.freq); const led = el(this.p).q('.tx'); if (led) { led.setAttribute('fill', '#ff3b30'); setTimeout(() => led.setAttribute('fill', '#3b1111'), 150); } return 1; },
+      parsePacket() { if (!this.p || !dev.loraRx.length) return 0; this.rx = dev.loraRx.shift(); this.rxi = 0; return this.rx.text.length; },
       available() { return this.rx ? this.rx.text.length - this.rxi : 0; },
       read() { if (!this.rx || this.rxi >= this.rx.text.length) return -1; return this.rx.text[this.rxi++]; },
       peek() { return this.rx ? this.rx.text[this.rxi] : -1; },
@@ -729,7 +760,7 @@
       packetRssi() { return this.rx ? this.rx.rssi : 0; }, packetSnr() { return 9.5; }, packetFrequencyError() { return 0; },
       onReceive(fn) { this.cb = fn; }, onTxDone() { }
     };
-    sim.loraHook = () => { const L = env.LoRa; if (L.cb && sim.loraRx.length && L.p) { const n = L.parsePacket(); if (n) safeCall(() => L.cb(n)); } };
+    dev.loraHook = () => { const L = env.LoRa; if (L.cb && dev.loraRx.length && L.p) { const n = L.parsePacket(); if (n) safeCall(() => L.cb(n)); } };
 
     // --- RTC
     class DateTime {
@@ -750,7 +781,7 @@
     env.DateTime = DateTime;
     env.TimeSpan = class { constructor(d = 0, h = 0, m = 0, s = 0) { this.s = d * 86400 + h * 3600 + m * 60 + s; } totalseconds() { return this.s; } };
     const localOffset = -new Date().getTimezoneOffset() * 60;
-    class RTC { begin() { this.p = partsOfKind(['rtc'])[0]; this.off = sim.rtcOffset ?? localOffset; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); } isrunning() { return true; } lostPower() { return false; } adjust(dt) { this.off = dt.t - Date.now() / 1000; sim.rtcOffset = this.off; } now() { return new DateTime(Date.now() / 1000 + this.off); } }
+    class RTC { begin() { this.p = mine(['rtc'])[0]; this.off = sim.rtcOffset ?? localOffset; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); } isrunning() { return true; } lostPower() { return false; } adjust(dt) { this.off = dt.t - Date.now() / 1000; sim.rtcOffset = this.off; } now() { return new DateTime(Date.now() / 1000 + this.off); } }
     env.RTC_DS1307 = RTC; env.RTC_DS3231 = class extends RTC { getTemperature() { return 26.5; } };
 
     // --- SD card
@@ -770,7 +801,7 @@
     env.File = File;
     env.SD = {
       ok: false,
-      begin() { const p = partsOfKind(['sd'])[0]; this.ok = !!(p && busOk(p, ['CS', 'SCK', 'DI', 'DO'])); if (!p) warn('sd', 'ไม่พบโมดูล microSD ในวงจร'); return this.ok; },
+      begin() { const p = mine(['sd'])[0]; this.ok = !!(p && busOk(p, ['CS', 'SCK', 'DI', 'DO'])); if (!p) warn('sd', 'ไม่พบโมดูล microSD ในวงจร'); return this.ok; },
       open(name, mode = 0) { if (!this.ok) return null; name = String(name).replace(/^\//, ''); if (mode === 0 && !(name in sim.sd)) return null; return new File(name, mode); },
       exists(name) { return String(name).replace(/^\//, '') in sim.sd; }, remove(name) { delete sim.sd[String(name).replace(/^\//, '')]; showSd(); return true; },
       mkdir() { return true; }, rmdir() { return true; }, cardType() { return 2; }, cardSize() { return 8 * 1024 ** 3; }
@@ -778,7 +809,7 @@
 
     // --- Keypad
     env.Keypad = class {
-      constructor(map, rows, cols) { this.p = partsOfKind(['keypad'])[0]; if (!this.p) warn('kp', 'ไม่พบ Keypad ในวงจร'); else if (!ed.isBasic() && !sim.nets.gpiosOn(netOf(this.p, 'R1')).length) { warn('kpw', 'Keypad ยังไม่ได้ต่อสายแถว/คอลัมน์เข้าบอร์ด'); this.p = null; } }
+      constructor(map, rows, cols) { this.p = mine(['keypad'])[0]; if (!this.p) warn('kp', 'ไม่พบ Keypad ในวงจร'); else if (!ed.isBasic() && !sim.nets.gpiosOn(netOf(this.p, 'R1')).length) { warn('kpw', 'Keypad ยังไม่ได้ต่อสายแถว/คอลัมน์เข้าบอร์ด'); this.p = null; } }
       getKey() { if (!this.p) return ''; const q = st(this.p); const k = q.key || ''; q.key = ''; return k; }
       async waitForKey() { for (; ;) { const k = this.getKey(); if (k) return k; await env.delay(10); } }
       getState() { return 0; } isPressed(k) { return false; } keyStateChanged() { return false; } setDebounceTime() { } setHoldTime() { } addEventListener() { }
@@ -786,7 +817,7 @@
 
     // --- Stepper
     env.Stepper = class {
-      constructor(steps) { this.steps = steps || 200; this.rpm = 10; this.p = partsOfKind(['stepper'])[0]; this.angle = 0; }
+      constructor(steps) { this.steps = steps || 200; this.rpm = 10; this.p = mine(['stepper'])[0]; this.angle = 0; }
       setSpeed(r) { this.rpm = r || 1; }
       async step(n) {
         const ms = Math.abs(n) * 60000 / (this.steps * this.rpm), e = this.p && el(this.p), dir = Math.sign(n), each = 360 / this.steps;
@@ -805,13 +836,103 @@
     sim.irPush = (code) => ir.q.push(code);
     env.IrReceiver = {
       decodedIRData: { command: 0, address: 0, protocol: 8, decodedRawData: 0, flags: 0 },
-      begin(pin) { this.p = partsOfKind(['irrecv'])[0]; if (!this.p) warn('ir', 'ไม่พบ IR Receiver ในวงจร'); },
+      begin(pin) { this.p = mine(['irrecv'])[0]; if (!this.p) warn('ir', 'ไม่พบ IR Receiver ในวงจร'); },
       start() { }, enableIRIn() { },
       decode() { if (!this.p || !powered(this.p) || !ir.q.length) return false; const c = ir.q.shift(); this.decodedIRData = { command: c, address: 0, protocol: 8, decodedRawData: (((~c) & 255) << 24) | (c << 16) | 0xff00, flags: 0 }; return true; },
       resume() { }, printIRResultShort() { serialWrite(`Protocol=NEC Address=0x0 Command=0x${this.decodedIRData.command.toString(16).toUpperCase()}\n`); }
     };
     env.decode_results = class { constructor() { this.value = 0; this.decode_type = 3; this.bits = 32; } };
     env.IRrecv = class { constructor() { } enableIRIn() { env.IrReceiver.begin(); } decode(r) { if (!env.IrReceiver.decode()) return false; const c = env.IrReceiver.decodedIRData.command; if (r) r.value = (0x00ff << 16) | (c << 8) | ((~c) & 255); return true; } resume() { } };
+
+
+    /* ---------- talking to other boards ---------- */
+    Object.assign(env, { ESP_OK: 0, ESP_FAIL: -1, ESP_NOW_SEND_SUCCESS: 0, ESP_NOW_SEND_FAIL: 1, ESP_NOW_ETH_ALEN: 6, ESP_NOW_MAX_DATA_LEN: 250, WIFI_IF_STA: 0, WIFI_IF_AP: 1,
+      HTTP_GET: 1, HTTP_POST: 3, HTTP_ANY: 0, HTTP_CODE_OK: 200, HTTPC_ERROR_CONNECTION_REFUSED: -1, HTTPC_ERROR_READ_TIMEOUT: -11 });
+    env.memcpy = (dst, src, n) => {
+      const len = n ?? (src && src.length) ?? 0;
+      if (src && typeof src === 'object' && !Array.isArray(src)) { if (dst && typeof dst === 'object' && !Array.isArray(dst)) { Object.assign(dst, clonePayload(src)); return dst; } return clonePayload(src); }
+      const items = typeof src === 'string' ? src.split('') : Array.isArray(src) ? src : [];
+      if (typeof dst === 'string') { let t = ''; for (let i = 0; i < Math.min(len, items.length); i++) { const c = items[i]; if (c === 0 || c === '\0') break; t += typeof c === 'number' ? String.fromCharCode(c) : c; } return t; }
+      if (Array.isArray(dst)) { for (let i = 0; i < Math.min(len, items.length); i++) dst[i] = typeof dst[0] === 'number' && typeof items[i] === 'string' ? items[i].charCodeAt(0) : items[i]; return dst; }
+      return dst;
+    };
+    env.__readInto = (o, set, n) => {
+      if (o && o.readInto) return o.readInto(set, n);
+      let t = '', c; while (t.length < (n || 0) && (c = o.read()) !== -1 && c !== undefined) t += typeof c === 'number' ? String.fromCharCode(c) : c;
+      set(t); return t.length;
+    };
+    env.memset = (dst, v, n) => { if (Array.isArray(dst)) dst.fill(v, 0, n ?? dst.length); return dst; };
+    env.memcmp = (a, b, n) => { for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1; return 0; };
+    // ESP-NOW
+    const now = dev.espnow = { on: false, recv: null, sent: null };
+    env.esp_now_init = () => { if (B !== IOTF.BOARDS.esp32) { warn('nowb', `ESP-NOW ใช้ได้กับ ESP32 เท่านั้น (${B.name})`); return -1; } now.on = true; return 0; };
+    env.esp_now_deinit = () => { now.on = false; return 0; };
+    env.esp_now_register_recv_cb = (fn) => { now.recv = fn; return 0; };
+    env.esp_now_register_send_cb = (fn) => { now.sent = fn; return 0; };
+    env.esp_now_unregister_recv_cb = () => { now.recv = null; return 0; };
+    env.esp_now_recv_cb_t = (f) => f; env.esp_now_send_cb_t = (f) => f;
+    env.esp_now_add_peer = () => 0; env.esp_now_del_peer = () => 0; env.esp_now_is_peer_exist = () => true; env.esp_now_mod_peer = () => 0;
+    env.esp_now_peer_info_t = class { constructor() { this.peer_addr = [0, 0, 0, 0, 0, 0]; this.channel = 0; this.encrypt = false; this.ifidx = 0; } };
+    env.esp_now_send = (mac, data, len) => {
+      if (!now.on) { warn('nowi', 'เรียก esp_now_send ก่อน esp_now_init()'); return 0x3069; }
+      const to = mac && Array.isArray(mac) && mac.some((x) => x !== 0xff) ? mac.slice(0, 6) : null;
+      sim.espnowSend(dev, to, payloadOf(data, len));
+      return 0;
+    };
+    env.esp_wifi_set_channel = () => 0; env.esp_wifi_get_mac = (i, arr) => { if (Array.isArray(arr)) ni.macBytes.forEach((x, k) => { arr[k] = x; }); return 0; };
+    // WiFi UDP
+    env.WiFiUDP = class {
+      constructor() { this.q = []; this.cur = null; this.ri = 0; this.out = null; this.port = 0; }
+      begin(port) { this.port = port; dev.udp.push(this); return 1; }
+      stop() { dev.udp = dev.udp.filter((u) => u !== this); }
+      beginPacket(ip, port) { this.out = { ip: String(ip), port, data: '' }; return 1; }
+      write(v, len) { if (!this.out) return 0; const s = typeof v === 'number' ? String.fromCharCode(v) : Array.isArray(v) ? v.slice(0, len ?? v.length).map((c) => (typeof c === 'number' ? String.fromCharCode(c) : c)).join('') : String(v).slice(0, len ?? undefined); this.out.data += s; return s.length; }
+      print(v, f) { return this.write(fmtNum(v, f)); } println(v, f) { return this.write((v === undefined ? '' : fmtNum(v, f)) + '\n'); }
+      printf(fmt, ...a) { return this.write(sprintf(fmt, ...a)); }
+      endPacket() { if (!this.out) return 0; const ok = sim.udpSend(dev, this.out, this.port); this.out = null; return ok ? 1 : 0; }
+      parsePacket() { if (!this.q.length) return 0; this.cur = this.q.shift(); this.ri = 0; return this.cur.data.length; }
+      available() { return this.cur ? this.cur.data.length - this.ri : 0; }
+      read() { if (!this.cur || this.ri >= this.cur.data.length) return -1; return this.cur.data[this.ri++]; }
+      readInto(set, len) { const s = this.cur ? this.cur.data.slice(this.ri, this.ri + (len || 9999)) : ''; this.ri += s.length; set(s); return s.length; }
+      readString() { const s = this.cur ? this.cur.data.slice(this.ri) : ''; this.ri += s.length; return s; }
+      remoteIP() { return new IPAddress(this.cur ? this.cur.from : '0.0.0.0'); } remotePort() { return this.cur ? this.cur.fromPort : 0; }
+      flush() { }
+    };
+    // HTTP server
+    env.WebServer = class {
+      constructor(port) { this.port = port || 80; this.routes = []; this.notFound = null; this.q = []; this.cur = null; this.busy = false; }
+      on(path, a, b) { this.routes.push({ path: String(path), fn: typeof a === 'function' ? a : b }); }
+      onNotFound(fn) { this.notFound = fn; }
+      begin() { if (!dev.servers.includes(this)) dev.servers.push(this); }
+      close() { dev.servers = dev.servers.filter((x) => x !== this); }
+      handleClient() {
+        if (this.busy || !this.q.length) return;
+        const req = this.q.shift(); this.cur = req; this.busy = true;
+        const r = this.routes.find((x) => x.path === req.path), fn = r ? r.fn : this.notFound;
+        if (!fn) { this.send(404, 'text/plain', 'Not found: ' + req.path); return; }
+        safeCall(async () => { await fn(); if (!req.done) this.send(200, 'text/plain', ''); });
+      }
+      send(code, type, body) { const req = this.cur; if (!req || req.done) return; req.done = true; this.busy = false; this.cur = null; req.resolve({ code, type: type || 'text/plain', body: body === undefined ? '' : String(body) }); }
+      sendHeader() { } setContentLength() { } enableCORS() { }
+      arg(name) { if (!this.cur) return ''; if (typeof name === 'number') return Object.values(this.cur.args)[name] ?? ''; return this.cur.args[name] ?? ''; }
+      argName(i) { return this.cur ? Object.keys(this.cur.args)[i] ?? '' : ''; }
+      hasArg(name) { return !!(this.cur && name in this.cur.args); } args() { return this.cur ? Object.keys(this.cur.args).length : 0; }
+      uri() { return this.cur ? this.cur.path : ''; } method() { return this.cur && this.cur.method === 'POST' ? 3 : 1; }
+      client() { const ip = this.cur ? this.cur.from : '0.0.0.0'; return { remoteIP: () => new IPAddress(ip) }; }
+    };
+    env.ESP8266WebServer = env.WebServer;
+    // HTTP client
+    env.HTTPClient = class {
+      begin(a, b) { this.url = String(b === undefined ? a : b); return true; }
+      addHeader() { } setTimeout(ms) { this.to = ms; } setConnectTimeout() { } setReuse() { }
+      async GET() { return this._req('GET', ''); }
+      async POST(body) { return this._req('POST', body === undefined ? '' : String(body)); }
+      async PUT(body) { return this._req('PUT', body === undefined ? '' : String(body)); }
+      async sendRequest(m, body) { return this._req(String(m), body === undefined ? '' : String(body)); }
+      async _req(method, body) { this.resp = await sim.httpRequest(dev, method, this.url, body, this.to || 5000); return this.resp.code; }
+      getString() { return this.resp ? this.resp.body : ''; } getSize() { return this.resp ? this.resp.body.length : 0; }
+      end() { } errorToString(c) { return c === -1 ? 'connection refused' : c === -11 ? 'read timeout' : 'error ' + c; }
+    };
 
     // unknown ALL_CAPS constants resolve to 0 (with a warning) so library flags don't crash the sketch
     return new Proxy(env, {
@@ -893,51 +1014,155 @@
     if (/Assignment to constant/.test(msg)) return 'แก้ค่าของค่าคงที่ (#define / const) ไม่ได้';
     return msg;
   }
-  function onError(e) {
+  function onError(e, dev) {
     if (e === STOP) return;
-    const line = errLine(e);
-    serialWrite(`\n✖ ${line ? 'บรรทัด ' + line + ': ' : ''}${explain(e)}\n`, 'serr');
-    if (line && IOTF.app) IOTF.app.markError(line);
+    const line = errLine(e), who = dev && sim.devices.length > 1 ? '[' + dev.name + '] ' : '';
+    serialWrite(`\n✖ ${who}${line ? 'บรรทัด ' + line + ': ' : ''}${explain(e)}\n`, 'serr');
+    if (line && IOTF.app) IOTF.app.markError(line, dev && dev.id);
     sim.stop(true);
   }
 
-  sim.start = async function (src) {
+  /* ---------- the air between boards ---------- */
+  function later(ms, fn) { const gen = sim.gen; sim.timers.push(setTimeout(() => { if (sim.running && gen === sim.gen) fn(); }, ms)); }
+  function clonePayload(x) {
+    if (x == null || typeof x !== 'object') return x;
+    if (Array.isArray(x)) { const a = x.map(clonePayload); if (x.toString !== Array.prototype.toString) a.toString = x.toString; return a; }
+    const o = {}; Object.keys(x).forEach((k) => { o[k] = clonePayload(x[k]); }); return o;
+  }
+  const bytesOf = (str) => { const a = String(str).split(''); a.toString = function () { return this.join(''); }; return a; };
+  function payloadOf(data, len) {
+    if (typeof data === 'string') return { kind: 'text', text: len !== undefined && len !== null ? data.slice(0, len) : data };
+    if (Array.isArray(data)) return { kind: 'bytes', bytes: data.slice(0, len ?? data.length) };
+    if (data && typeof data === 'object') return { kind: 'struct', obj: clonePayload(data) };
+    return { kind: 'text', text: String(data) };
+  }
+  function payloadArg(pl) {
+    if (pl.kind === 'text') return [bytesOf(pl.text), pl.text.length];
+    if (pl.kind === 'bytes') return [pl.bytes.slice(), pl.bytes.length];
+    return [clonePayload(pl.obj), 4];
+  }
+  const macArg = (bytes) => { const a = (bytes || [255, 255, 255, 255, 255, 255]).slice(); a.src_addr = a; a.des_addr = a; return a; };
+  const sameMac = (a, b) => a && b && a.length >= 6 && b.length >= 6 && a.slice(0, 6).every((x, i) => (x & 255) === (b[i] & 255));
+  // a packet travelling between two boards on the canvas
+  const lastAnim = {};
+  function anim(from, to, label, color) {
+    if (!from || !to || !from.part || !to.part || from === to) return;
+    const key = from.id + to.id + label, t = performance.now();
+    if (lastAnim[key] && t - lastAnim[key] < 220) return; lastAnim[key] = t;
+    const c = (d) => { const n = ed.els[d.part.id]; return { x: d.part.x + (n ? n.w : 100) / 2, y: d.part.y + (n ? n.h : 100) / 2 }; };
+    const a = c(from), b = c(to), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - Math.max(30, Math.abs(b.x - a.x) * 0.15);
+    const layer = document.getElementById('radioLayer'); if (!layer) return;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const col = color || '#e87d0d', d = `M${a.x} ${a.y}Q${mx} ${my} ${b.x} ${b.y}`;
+    g.innerHTML = `<path class="radio-line" d="${d}" stroke="${col}"/><circle r="5" fill="${col}"><animateMotion dur="0.45s" fill="freeze" path="${d}"/></circle>` +
+      `<text class="radio-tag" x="${mx}" y="${my + 4}" fill="${col}" text-anchor="middle">${label}</text>`;
+    g.classList.add('radio-dot'); layer.appendChild(g);
+    setTimeout(() => g.remove(), 900);
+  }
+  sim.anim = anim;
+  sim.espnowSend = function (from, toMac, pl, remote) {
+    const targets = sim.devices.filter((d) => d !== from && d.espnow && d.espnow.on && (!toMac || sameMac(d.macBytes, toMac)));
+    targets.forEach((d) => {
+      if (!remote) anim(from, d, 'ESP-NOW', '#e87d0d');
+      later(6 + Math.random() * 8, () => { if (d.espnow.recv) { const [data, len] = payloadArg(pl); safeCallDev(() => d.espnow.recv(macArg(from.macBytes), data, len), d); } });
+    });
+    if (!remote) {
+      IOTF.iot.busSend && IOTF.iot.busSend({ type: 'espnow', from: from.macBytes, to: toMac, pl });
+      if (from.espnow.sent) later(10, () => safeCallDev(() => from.espnow.sent(macArg(toMac), toMac && !targets.length ? 1 : 0), from));
+    }
+    return targets.length;
+  };
+  sim.espnowFromRemote = (msg) => { if (sim.running) sim.espnowSend({ macBytes: msg.from, id: 'remote' }, msg.to, msg.pl, true); };
+  sim.udpSend = function (from, out, localPort) {
+    if (!from.wifi || from.wifi.status !== 3) { warnDev(from, 'udpw', 'ส่ง UDP ไม่ได้: ยังไม่ได้เชื่อมต่อ WiFi'); return false; }
+    const bc = /\.255$/.test(out.ip);
+    sim.devices.forEach((d) => {
+      if (d === from || !d.wifi || d.wifi.status !== 3 || !(bc || d.wifi.ip === out.ip)) return;
+      d.udp.filter((u) => u.port === out.port).forEach((u) => { anim(from, d, 'UDP', '#22d3ee'); later(5, () => u.q.push({ data: out.data, from: from.wifi.ip, fromPort: localPort || out.port })); });
+    });
+    return true;
+  };
+  sim.httpRequest = function (from, method, url, body, timeout) {
+    const m = /^https?:\/\/([^/:?#]+)(?::(\d+))?(\/[^?#]*)?(?:\?([^#]*))?/.exec(String(url).trim());
+    if (!m) return Promise.resolve({ code: -1, body: '' });
+    if (from && (!from.wifi || from.wifi.status !== 3)) { warnDev(from, 'httpw', 'ส่ง HTTP ไม่ได้: ยังไม่ได้เชื่อมต่อ WiFi'); return Promise.resolve({ code: -1, body: '' }); }
+    const host = m[1], port = +m[2] || 80, path = decodeURIComponent(m[3] || '/');
+    const target = sim.devices.find((d) => d.wifi && d.wifi.status === 3 && d.wifi.ip === host);
+    const server = target && target.servers.find((x) => x.port === port);
+    if (!server) return new Promise((r) => setTimeout(() => r({ code: -1, body: '' }), 150));
+    const args = {};
+    new URLSearchParams(m[4] || '').forEach((v, k) => { args[k] = v; });
+    if (body) { if (/^[^{[]*=/.test(body)) new URLSearchParams(body).forEach((v, k) => { args[k] = v; }); args.plain = body; }
+    if (from) anim(from, target, 'HTTP', '#3cb371');
+    return new Promise((resolve) => {
+      const req = { method, path, args, from: from ? from.wifi.ip : '192.168.1.50', done: false };
+      const t = setTimeout(() => { if (!req.done) { req.done = true; resolve({ code: -11, body: '' }); } }, timeout || 5000);
+      req.resolve = (r) => { clearTimeout(t); if (from) anim(target, from, String(r.code), '#3cb371'); resolve(r); };
+      server.q.push(req);
+    });
+  };
+  sim.loraLocal = function (from, text, freq) {
+    sim.devices.forEach((d) => {
+      if (d === from || !d.lora || !d.lora.p || Math.abs((d.lora.freq || 0) - freq) > 1e5) return;
+      anim(from, d, 'LoRa', '#c084fc');
+      later(20, () => d.loraRx.push({ text, rssi: -55 - Math.floor(Math.random() * 40) }));
+    });
+  };
+
+  /* ---------- start / stop ---------- */
+  function reportCompile(dev, e, explainIt) {
+    const who = sim.devices.length > 1 ? '[' + dev.name + '] ' : '';
+    serialWrite(`✖ ${who}${e.line ? 'บรรทัด ' + e.line + ': ' : ''}${explainIt ? explain(e) : e.message}\n`, 'serr');
+    if (e.line && IOTF.app) IOTF.app.markError(e.line, dev.id);
+  }
+  // programs: [{ board, code }] — one per board on the canvas (a plain string runs on the active board)
+  sim.start = async function (programs) {
     sim.stop(true);
     const gen = ++sim.gen; sim.curGen = gen;
-    sim.out = {}; sim.tones = {}; sim.ints = []; sim.partState = {}; sim.memo = {}; sim.warnOnce = new Set(); sim.pinModeHint = new Set(); sim.loraRx = []; sim.serialIn = '';
+    sim.partState = {}; sim.memo = {}; sim.warnOnce = new Set(); sim.clientDev = {};
     sim.sd = Object.assign({}, ed.project.sdFiles || {}); showSd();
     sim.nets = ed.nets(); sim.t0 = performance.now();
     if (!ed.board()) { serialWrite('✖ ยังไม่มีบอร์ดในวงจร\n', 'serr'); return false; }
-    let t;
-    try { t = IOTF.transpile(src); } catch (e) { serialWrite(`✖ ${e.line ? 'บรรทัด ' + e.line + ': ' : ''}${e.message}\n`, 'serr'); if (e.line && IOTF.app) IOTF.app.markError(e.line); return false; }
-    let fn;
-    try { fn = await loadProgram(t.code); } catch (e) { serialWrite(`✖ ${e.line ? 'บรรทัด ' + e.line + ': ' : ''}${explain(e)}\n`, 'serr'); if (e.line && IOTF.app) IOTF.app.markError(e.line); return false; }
-    if (gen !== sim.gen) return false;
+    if (typeof programs === 'string') programs = [{ board: ed.board(), code: programs }];
+    sim.devices = []; sim.devByBoard = {};
+    programs.forEach((pg) => {
+      const b = pg.board, ni = ed.netInfo(b);
+      const dev = { id: b.id, part: b, bd: ed.boardDef(b), name: ed.boardName(b), code: pg.code, out: {}, tones: {}, ints: [], serialIn: '', loraRx: [], pinModeHint: new Set(),
+        atLineStart: true, mac: ni.mac, macBytes: ni.macBytes, udp: [], servers: [], wifi: { status: 0 } };
+      sim.devices.push(dev); sim.devByBoard[b.id] = dev;
+    });
+    for (const dev of sim.devices) {
+      let t;
+      try { t = IOTF.transpile(dev.code || ''); } catch (e) { reportCompile(dev, e, false); return false; }
+      try { dev.fn = await loadProgram(t.code); } catch (e) { reportCompile(dev, e, true); return false; }
+      if (gen !== sim.gen) return false;
+    }
     sim.running = true; ed.setRunning(true);
     IOTF.iot.onRun(true);
     hookEvents();
-    const tick = () => { if (!sim.running || gen !== sim.gen) return; refresh(); sim.loraHook && sim.loraHook(); sim.raf = requestAnimationFrame(tick); };
+    const tick = () => { if (!sim.running || gen !== sim.gen) return; refresh(); sim.devices.forEach((d) => d.loraHook && d.loraHook()); sim.raf = requestAnimationFrame(tick); };
     sim.raf = requestAnimationFrame(tick);
-    sim.intTimer = setInterval(() => { if (sim.running && sim.ints.length) refreshInts(); }, 3);
-    serialWrite(`— เริ่มจำลอง ${ed.boardDef().name} —\n`, 'sinfo');
-    (async () => {
-      try {
-        const env = makeEnv();
-        const prog = await fn(env);
-        if (!prog.setup || !prog.loop) throw Object.assign(new Error('โปรแกรมต้องมีฟังก์ชัน setup() และ loop()'), { line: 1 });
-        await prog.setup();
-        let last = performance.now();
-        while (sim.running && gen === sim.gen) { await prog.loop(); if (performance.now() - last > 8) { await sleep(0); last = performance.now(); } }
-      } catch (e) { if (e !== STOP && gen === sim.gen) onError(e); }
-    })();
+    sim.intTimer = setInterval(() => { if (sim.running) refreshInts(); }, 3);
+    serialWrite(`— เริ่มจำลอง ${sim.devices.map((d) => sim.devices.length > 1 ? d.name : d.bd.name).join(', ')} —\n`, 'sinfo');
+    sim.devices.forEach((dev) => runDevice(dev, gen));
     return true;
   };
+  async function runDevice(dev, gen) {
+    try {
+      const env = makeEnv(dev);
+      const prog = await dev.fn(env);
+      if (!prog.setup || !prog.loop) throw Object.assign(new Error('โปรแกรมต้องมีฟังก์ชัน setup() และ loop()'), { line: 1 });
+      await prog.setup();
+      let last = performance.now();
+      while (sim.running && gen === sim.gen) { await prog.loop(); if (performance.now() - last > 8) { await sleep(0); last = performance.now(); } }
+    } catch (e) { if (e !== STOP && gen === sim.gen) onError(e, dev); }
+  }
   function refreshInts() {
-    sim.ints.forEach((it) => {
-      const lv = readPin(it.gpio);
-      if (it.last !== undefined && lv !== it.last) { const rising = lv === 1; if (it.mode === 1 || (it.mode === 3 && rising) || (it.mode === 2 && !rising)) safeCall(it.fn); }
+    sim.devices.forEach((dev) => dev.ints.forEach((it) => {
+      const lv = readPinDev(dev, it.gpio);
+      if (it.last !== undefined && lv !== it.last) { const rising = lv === 1; if (it.mode === 1 || (it.mode === 3 && rising) || (it.mode === 2 && !rising)) safeCallDev(it.fn, dev); }
       it.last = lv;
-    });
+    }));
   }
 
   sim.stop = function (quiet) {
@@ -947,8 +1172,8 @@
     sim.timers.forEach(clearTimeout); sim.timers = [];
     sim.listeners.forEach((f) => f()); sim.listeners = [];
     Object.keys(osc).forEach((k) => sound(k, 0));
+    const rl = document.getElementById('radioLayer'); if (rl) rl.innerHTML = '';
     if (was) {
-      // reset visuals
       ed.project.parts.forEach((p) => {
         const d = P[p.type], e = el(p); if (!e) return;
         try {
@@ -957,7 +1182,7 @@
           if (d.kind === 'bargraph') e.values = [];
           if (d.kind === 'seg7') e.values = [0, 0, 0, 0, 0, 0, 0, 0];
           if (d.kind === 'buzzer') e.hasSignal = false;
-          if (d.kind === 'board') { const B = IOTF.BOARDS[d.board]; e[B.led.prop] = false; }
+          if (d.kind === 'board') { const B = IOTF.BOARDS[d.board]; e[B.led.prop] = false; if ('ledPower' in e) e.ledPower = false; }
           if (d.kind === 'pixels') { if (p.type === 'neopixel') { e.r = e.g = e.b = 0; } else e.reset && e.reset(); }
           if (d.kind === 'lcd') { e.characters = new Uint8Array(p.type === 'lcd2004' ? 80 : 32).fill(32); e.backlight = false; e.cursor = e.blink = false; }
           if (d.kind === 'oled' && e.imageData) { e.imageData.data.fill(0); e.redraw && e.redraw(); }
@@ -971,6 +1196,7 @@
     if (IOTF.iot && ed.project) IOTF.iot.onRun(false);
     ed.setRunning(false);
   };
-  sim.serialSend = (text) => { sim.serialIn += text; };
-  sim.loraReceive = (text, rssi) => { sim.loraRx.push({ text, rssi: rssi || -60 - Math.floor(Math.random() * 30) }); };
+  // Serial Monitor input goes to the board whose code is open
+  sim.serialSend = (text) => { const d = (ed.board() && sim.devByBoard[ed.board().id]) || sim.devices[0]; if (d) d.serialIn += text; };
+  sim.loraReceive = (text, rssi) => { sim.devices.forEach((d) => { if (d.lora && d.lora.p) d.loraRx.push({ text, rssi: rssi || -60 - Math.floor(Math.random() * 30) }); }); };
 })();

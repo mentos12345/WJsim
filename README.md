@@ -14,6 +14,7 @@
 
 - **อุปกรณ์ 57 ชิ้น**: บอร์ด (ESP32, Uno, Nano, Mega, Nano RP2040 Connect, ATtiny85), เซ็นเซอร์ (DHT22, HC-SR04, PIR, LDR, MQ-2, เปลวไฟ, เสียง, NTC, ชีพจร, Tilt, MPU6050, pH, TDS, Load Cell), จอ (LCD 16×2/20×4, OLED, TFT, 7-segment), ไฟ/เสียง (LED, RGB, NeoPixel วงแหวน/เมทริกซ์, Bar graph, Buzzer), อินพุต (ปุ่ม, สวิตช์, Potentiometer, Joystick, Keypad, Encoder, DIP, รีโมท IR, Dialer), มอเตอร์ (Servo, Stepper), โมดูล (Relay 1/4 ช่อง, HX711, RFID RC522, GPS NEO-6M, LoRa SX1278, RTC, microSD, IR Receiver)
 - **IoT ครบในแอป**: WiFi จำลอง, MQTT broker ในตัว, Dashboard (เกจ กราฟ สวิตช์ ปุ่ม แถบเลื่อน ไฟสถานะ ช่องส่งข้อความ), LoRa และ **หลายหน้าต่างคุยกันได้** (ไฟล์ → หน้าต่างใหม่) เพื่อจำลองหลายบอร์ด
+- **หลายบอร์ดในวงจรเดียว**: ลากบอร์ดเพิ่มลงผัง แต่ละบอร์ดมีโค้ดของตัวเอง (MAC 24:0A:C4:00:00:0N, IP 192.168.1.10N) ส่งข้อมูลหากันผ่าน ESP-NOW (มีบล็อก "บอร์ดคุยกัน"), WiFiUDP, WebServer/HTTPClient, MQTT และ LoRa พร้อมแอนิเมชันแพ็กเก็ตบนผัง
 - **ไลบรารีที่รองรับในโค้ด C++**: WiFi, PubSubClient, DHT, Servo/ESP32Servo, LiquidCrystal_I2C, Adafruit SSD1306 / ILI9341 / NeoPixel / MPU6050, HX711, MFRC522, TinyGPSPlus, LoRa, RTClib, SD, Keypad, Stepper, IRremote, attachInterrupt, tone, ledc (ESP32), Serial รับ-ส่ง
 - Serial Monitor (พิมพ์ส่งเข้าได้), แท็บ LoRa, ไฟล์ใน SD card, ตัวอย่าง 13 โปรเจกต์, Undo/Redo, บันทึกเป็นไฟล์ `.iotf`, ส่งออกโค้ด `.ino` ไปใช้กับ Arduino IDE, บันทึกอัตโนมัติ
 
