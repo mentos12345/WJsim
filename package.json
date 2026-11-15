@@ -1,10 +1,10 @@
 {
-  "name": "iotforge",
-  "productName": "IoTForge",
-  "version": "1.0.1",
+  "name": "wongjorn",
+  "productName": "Wongjorn",
+  "version": "1.0.2",
   "description": "โปรแกรมจำลองวงจร IoT แบบออฟไลน์ มีโหมด Basic (Block) และ Advanced (C++)",
   "main": "electron/main.js",
-  "author": "IoTForge Contributors",
+  "author": "Wongjorn Contributors",
   "license": "MIT",
   "homepage": "https://mentos12345.github.io/iotforge/",
   "scripts": {
@@ -21,9 +21,9 @@
     "electron-builder": "^26.18.0"
   },
   "build": {
-    "appId": "org.iotforge.app",
-    "productName": "IoTForge",
-    "copyright": "© 2026 IoTForge Contributors",
+    "appId": "org.wongjorn.app",
+    "productName": "Wongjorn",
+    "copyright": "© 2026 Wongjorn Contributors",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -38,7 +38,7 @@
     "fileAssociations": [
       {
         "ext": "iotf",
-        "name": "IoTForge Project",
+        "name": "Wongjorn Project",
         "role": "Editor",
         "icon": "icon"
       }
@@ -62,11 +62,11 @@
       ],
       "category": "public.app-category.education",
       "icon": "build/icon.png",
-      "artifactName": "IoTForge-mac-${arch}.${ext}"
+      "artifactName": "Wongjorn-mac-${arch}.${ext}"
     },
     "dmg": {
-      "title": "IoTForge ${version}",
-      "artifactName": "IoTForge-mac-${arch}.${ext}"
+      "title": "Wongjorn ${version}",
+      "artifactName": "Wongjorn-mac-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -89,10 +89,10 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "artifactName": "IoTForge-Setup.${ext}"
+      "artifactName": "Wongjorn-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "IoTForge-Portable.${ext}"
+      "artifactName": "Wongjorn-Portable.${ext}"
     },
     "linux": {
       "target": [
@@ -101,11 +101,11 @@
       "category": "Education",
       "icon": "build/icon.png",
       "syncDesktopName": true,
-      "artifactName": "IoTForge-linux.${ext}"
+      "artifactName": "Wongjorn-linux.${ext}"
     },
     "publish": null
   },
-  "desktopName": "iotforge.desktop",
+  "desktopName": "wongjorn.desktop",
   "repository": {
     "type": "git",
     "url": "https://github.com/mentos12345/iotforge.git"

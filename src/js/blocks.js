@@ -1,4 +1,4 @@
-/* IoTForge — Blockly blocks (Thai) and an Arduino C++ generator */
+/* Wongjorn — Blockly blocks (Thai) and an Arduino C++ generator */
 (function () {
   'use strict';
   const ed = IOTF.editor;
@@ -75,10 +75,10 @@
   });
   def('iotf_neopixel_fill', function () { this.appendDummyInput().appendField('NeoPixel ขา').appendField(pinField(), 'PIN').appendField('(').appendField(new BL.FieldNumber(16, 1, 64, 1), 'N').appendField('ดวง) ทุกดวงเป็นสี').appendField(new BL.FieldDropdown(COLOURS), 'C'); stmt(this, COL.out); });
   // IoT
-  def('iotf_wifi', function () { this.appendDummyInput().appendField('เชื่อมต่อ WiFi ชื่อ').appendField(new BL.FieldTextInput('IoTForge-WiFi'), 'SSID').appendField('รหัส').appendField(new BL.FieldTextInput(''), 'PASS'); stmt(this, COL.iot, 'ใส่ไว้ในส่วน setup'); });
-  def('iotf_mqtt_publish', function () { this.appendValueInput('VALUE').appendField('ส่งค่า'); this.appendDummyInput().appendField('ไปที่ Dashboard หัวข้อ').appendField(new BL.FieldTextInput('iotforge/temp'), 'TOPIC'); this.setInputsInline(true); stmt(this, COL.iot, 'ส่งผ่าน MQTT ต้องเชื่อม WiFi ก่อน'); });
-  def('iotf_mqtt_value', function () { this.appendDummyInput().appendField('ข้อความล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('iotforge/led'), 'TOPIC'); val(this, COL.iot, 'String'); });
-  def('iotf_mqtt_number', function () { this.appendDummyInput().appendField('ตัวเลขล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('iotforge/level'), 'TOPIC'); val(this, COL.iot, 'Number'); });
+  def('iotf_wifi', function () { this.appendDummyInput().appendField('เชื่อมต่อ WiFi ชื่อ').appendField(new BL.FieldTextInput('Wongjorn-WiFi'), 'SSID').appendField('รหัส').appendField(new BL.FieldTextInput(''), 'PASS'); stmt(this, COL.iot, 'ใส่ไว้ในส่วน setup'); });
+  def('iotf_mqtt_publish', function () { this.appendValueInput('VALUE').appendField('ส่งค่า'); this.appendDummyInput().appendField('ไปที่ Dashboard หัวข้อ').appendField(new BL.FieldTextInput('wongjorn/temp'), 'TOPIC'); this.setInputsInline(true); stmt(this, COL.iot, 'ส่งผ่าน MQTT ต้องเชื่อม WiFi ก่อน'); });
+  def('iotf_mqtt_value', function () { this.appendDummyInput().appendField('ข้อความล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('wongjorn/led'), 'TOPIC'); val(this, COL.iot, 'String'); });
+  def('iotf_mqtt_number', function () { this.appendDummyInput().appendField('ตัวเลขล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('wongjorn/level'), 'TOPIC'); val(this, COL.iot, 'Number'); });
 
   /* ---------- generator ---------- */
   const G = new BL.CodeGenerator('CPP');
@@ -112,7 +112,7 @@
   };
   G.scrubNakedValue = () => '';
   G.finish = function () {
-    const out = ['// สร้างจาก Block ด้วย IoTForge — แก้เองได้ในแท็บนี้'];
+    const out = ['// สร้างจาก Block ด้วย Wongjorn — แก้เองได้ในแท็บนี้'];
     if (this.inc.size) { out.push(...[...this.inc].map((i) => `#include <${i}>`)); out.push(''); }
     if (this.vars.size) { this.vars.forEach((v) => out.push(v.str ? `String ${v.c} = "";${v.label !== v.c ? ' // ' + v.label : ''}` : `float ${v.c} = 0;${v.label !== v.c ? ' // ' + v.label : ''}`)); out.push(''); }
     if (this.glob.size) { out.push(...this.glob.values()); out.push(''); }
@@ -125,14 +125,14 @@
           `  for (int i = 0; i < ${subs.length}; i++) if (iotfTopics[i] == String(topic)) iotfValues[i] = msg;`, '}', '',
           'String iotfGet(String topic) {', `  for (int i = 0; i < ${subs.length}; i++) if (iotfTopics[i] == topic) return iotfValues[i];`, '  return "";', '}', '');
       }
-      out.push('void iotfMqtt() {', '  if (WiFi.status() != WL_CONNECTED) return;', '  if (!mqtt.connected()) {', '    if (mqtt.connect("iotforge-device")) {', '      Serial.println("MQTT connected");');
+      out.push('void iotfMqtt() {', '  if (WiFi.status() != WL_CONNECTED) return;', '  if (!mqtt.connected()) {', '    if (mqtt.connect("wongjorn-device")) {', '      Serial.println("MQTT connected");');
       subs.forEach((s) => out.push(`      mqtt.subscribe(${JSON.stringify(s)});`));
       out.push('    }', '  }', '  mqtt.loop();', '}', '');
     }
     this.helpers.forEach((h) => { out.push(h, ''); });
     out.push('void setup() {');
     const su = [...this.setups.values()];
-    if (this.mqtt) { su.push('mqtt.setServer("broker.iotforge.local", 1883);'); if (this.subs.size) su.push('mqtt.setCallback(iotfOnMessage);'); }
+    if (this.mqtt) { su.push('mqtt.setServer("broker.wongjorn.local", 1883);'); if (this.subs.size) su.push('mqtt.setCallback(iotfOnMessage);'); }
     su.forEach((l) => out.push('  ' + l));
     out.push(this.setupCode.replace(/\s+$/, '') ? this.setupCode.replace(/\s+$/, '') : '', '}', '', 'void loop() {');
     if (this.mqtt) out.push('  iotfMqtt();');

@@ -1,4 +1,4 @@
-/* IoTForge — Arduino C++ (subset) → JavaScript.
+/* Wongjorn — Arduino C++ (subset) → JavaScript.
  * Keeps line numbers so errors point at the user's code.
  * Supported: globals/locals of primitive & library types, arrays (incl. 2-D initialisers),
  * functions, #define, enum, casts, String methods, loops, switch, F(), sprintf/dtostrf.

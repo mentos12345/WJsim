@@ -1,6 +1,6 @@
 # Credits
 
-IoTForge itself is released under the MIT License (see `LICENSE`).
+Wongjorn itself is released under the MIT License (see `LICENSE`).
 It bundles the third-party components below; their full license texts are in `src/vendor/`.
 
 ## Device artwork
@@ -35,7 +35,7 @@ THE SOFTWARE.
 
 ### Original drawings (7 parts)
 pH Sensor, TDS Sensor, Load Cell, RFID RC522, GPS NEO-6M, LoRa SX1278 and 4-channel Relay Module
-were drawn from scratch for IoTForge (`src/js/parts.js`). Copyright (c) 2026 IoTForge Contributors, MIT License.
+were drawn from scratch for Wongjorn (`src/js/parts.js`). Copyright (c) 2026 Wongjorn Contributors, MIT License.
 No artwork from Fritzing (CC BY-SA 3.0) or from product photos was used.
 
 ## Software
@@ -50,4 +50,4 @@ The Electron runtime ships its own license files (`LICENSE.electron.txt`, `LICEN
 
 ## Trademarks
 Product and brand names (Arduino, ESP32, Raspberry Pi, Wokwi, ...) belong to their respective owners.
-IoTForge is not affiliated with or endorsed by them. Artwork is used only to show the style of each device.
+Wongjorn is not affiliated with or endorsed by them. Artwork is used only to show the style of each device.

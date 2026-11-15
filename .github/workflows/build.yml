@@ -1,4 +1,4 @@
-# Builds IoTForge for Windows, macOS and Linux and attaches the installers to the GitHub Release.
+# Builds Wongjorn for Windows, macOS and Linux and attaches the installers to the GitHub Release.
 # Runs when a tag like v1.0.0 is pushed, or by hand from Actions -> build -> Run workflow.
 name: build
 on:
@@ -31,7 +31,7 @@ jobs:
         run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: iotforge-${{ matrix.os }}
+          name: wongjorn-${{ matrix.os }}
           path: |
             dist/*.exe
             dist/*.dmg
@@ -41,7 +41,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: IoTForge ${{ steps.ver.outputs.tag }}
+          name: Wongjorn ${{ steps.ver.outputs.tag }}
           files: |
             dist/*.exe
             dist/*.dmg

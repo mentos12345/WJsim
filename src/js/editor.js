@@ -1,4 +1,4 @@
-/* IoTForge — circuit editor: parts, wires, nets, checks, properties */
+/* Wongjorn — circuit editor: parts, wires, nets, checks, properties */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);

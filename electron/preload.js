@@ -1,4 +1,4 @@
-// IoTForge — preload: the only bridge between the page and the operating system
+// Wongjorn — preload: the only bridge between the page and the operating system
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 

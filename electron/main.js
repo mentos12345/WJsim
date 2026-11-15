@@ -1,4 +1,4 @@
-// IoTForge — Electron main process
+// Wongjorn — Electron main process
 'use strict';
 const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
@@ -15,7 +15,7 @@ function readProjectFile(p) {
 function createWindow(fileToOpen) {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1000, minHeight: 640,
-    backgroundColor: '#1d1d1d', title: 'IoTForge', show: false,
+    backgroundColor: '#1d1d1d', title: 'Wongjorn', show: false,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -50,7 +50,7 @@ const send = (cmd) => { const w = BrowserWindow.getFocusedWindow(); if (w) w.web
 
 function buildMenu() {
   const template = [
-    ...(isMac ? [{ label: 'IoTForge', submenu: [{ label: 'เกี่ยวกับ IoTForge', click: () => send('about') }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: 'ออกจาก IoTForge' }] }] : []),
+    ...(isMac ? [{ label: 'Wongjorn', submenu: [{ label: 'เกี่ยวกับ Wongjorn', click: () => send('about') }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: 'ออกจาก Wongjorn' }] }] : []),
     {
       label: 'ไฟล์',
       submenu: [
@@ -93,7 +93,7 @@ function buildMenu() {
 }
 
 /* ---------- IPC ---------- */
-const PROJECT_FILTER = [{ name: 'IoTForge Project', extensions: ['iotf'] }, { name: 'JSON', extensions: ['json'] }];
+const PROJECT_FILTER = [{ name: 'Wongjorn Project', extensions: ['iotf'] }, { name: 'JSON', extensions: ['json'] }];
 ipcMain.handle('save-project', async (e, data, filePath, defaultName) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   let p = filePath;
