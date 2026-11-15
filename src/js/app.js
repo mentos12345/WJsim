@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.1';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
 
@@ -22,6 +22,7 @@
     blocks.load(p.blocks);
     iot.reset();
     syncModeUI();
+    $('wireStyle').value = p.wireStyle || 'ortho';
     if (p.codeManual && p.code) setCode(p.code, true); else regen();
     selectRightTab(p.mode === 'advanced' && (p.codeManual || blocks.isEmpty()) ? 'code' : 'blocks');
     renderChecks();
@@ -282,6 +283,9 @@
     $('btnRun').onclick = toggleRun;
     $('btnNew').onclick = newProj; $('btnOpen').onclick = open; $('btnSave').onclick = () => save(false);
     $('btnExamples').onclick = showExamples; $('btnExport').onclick = exportIno; $('btnAbout').onclick = showAbout;
+    $('wireStyle').onchange = (e) => ed.setWireStyle(e.target.value);
+    $('btnRoute').onclick = () => { ed.autoRoute(); toast('จัดสายเรียบร้อย กด Ctrl+Z เพื่อย้อนกลับได้'); };
+    $('btnClearBends').onclick = () => ed.clearBends();
     $('btnAutoPower').onclick = () => { const n = ed.autoPower(); toast(n ? `เพิ่มสายไฟ/กราวด์ ${n} เส้น` : 'ต่อไฟครบแล้ว'); renderChecks(); };
     document.querySelectorAll('#rightTabs button').forEach((b) => b.onclick = () => selectRightTab(b.dataset.tab));
     document.querySelectorAll('#bottomTabs button[data-tab]').forEach((b) => b.onclick = () => {

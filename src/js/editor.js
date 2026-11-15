@@ -396,16 +396,50 @@
     if (Math.abs(dx) > Math.abs(dy)) { const mx = a.x + dx / 2; return `M${a.x} ${a.y}H${mx}V${b.y}H${b.x}`; }
     const my = a.y + dy / 2; return `M${a.x} ${a.y}V${my}H${b.x}V${b.y}`;
   }
+  // path through the wire's own bend points, in the project's wire style
+  function wirePath(w, a, b) {
+    const style = ed.project.wireStyle || 'ortho';
+    const pts = [a].concat(w.points || []).concat([b]);
+    if (style === 'straight' || (style === 'ortho' && pts.length === 2 && false)) return 'M' + pts.map((q) => `${q.x} ${q.y}`).join('L');
+    if (style === 'curve') {
+      if (pts.length === 2) { const dx = Math.max(30, Math.abs(b.x - a.x) / 2); const s1 = b.x >= a.x ? 1 : -1; return `M${a.x} ${a.y}C${a.x + s1 * dx} ${a.y} ${b.x - s1 * dx} ${b.y} ${b.x} ${b.y}`; }
+      let d = `M${pts[0].x} ${pts[0].y}`;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+        d += `C${p1.x + (p2.x - p0.x) / 6} ${p1.y + (p2.y - p0.y) / 6} ${p2.x - (p3.x - p1.x) / 6} ${p2.y - (p3.y - p1.y) / 6} ${p2.x} ${p2.y}`;
+      }
+      return d;
+    }
+    if (pts.length === 2) return routePath(a, b);
+    // orthogonal: leave each point horizontally, then vertically
+    let d = `M${a.x} ${a.y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const q = pts[i], prev = pts[i - 1];
+      if (q.x === prev.x || q.y === prev.y) d += `L${q.x} ${q.y}`;
+      else if (i === pts.length - 1) d += `V${q.y}H${q.x}`;
+      else d += `H${q.x}V${q.y}`;
+    }
+    return d;
+  }
+  ed.wirePath = wirePath;
   function renderWires() {
     const svg = $('wires'); if (!svg) return;
-    let h = '';
+    let h = '', handles = '';
     ed.project.wires.forEach((w) => {
       const a = ed.pinPos(w.a.p, w.a.pin), b = ed.pinPos(w.b.p, w.b.pin);
       if (!a || !b) return;
-      const d = routePath(a, b);
-      h += `<path class="wire ${w.auto ? 'auto' : ''} ${ed.selWire === w.id ? 'sel' : ''}" d="${d}" stroke="${w.color}"/><path class="wirehit" data-w="${w.id}" d="${d}"><title>${w.a.pin} ↔ ${w.b.pin}</title></path>`;
+      const d = wirePath(w, a, b);
+      h += `<path class="wire ${w.auto && !(w.points || []).length ? 'auto' : ''} ${ed.selWire === w.id ? 'sel' : ''}" data-wl="${w.id}" d="${d}" stroke="${w.color}"/><path class="wirehit" data-w="${w.id}" d="${d}"><title>${w.a.pin} ↔ ${w.b.pin} · ลากเพื่อดัดสาย</title></path>`;
+      if (ed.selWire === w.id && !ed.running) {
+        const pts = [a].concat(w.points || []).concat([b]);
+        for (let i = 0; i < pts.length - 1; i++) {
+          const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+          handles += `<rect class="wmid" data-w="${w.id}" data-i="${i}" x="${mx - 3}" y="${my - 3}" width="6" height="6"><title>ลากเพื่อเพิ่มจุดหักมุม</title></rect>`;
+        }
+        (w.points || []).forEach((q, i) => { handles += `<circle class="wpt" data-w="${w.id}" data-i="${i}" cx="${q.x}" cy="${q.y}" r="4"><title>ลากเพื่อย้าย · ดับเบิลคลิกเพื่อลบจุด</title></circle>`; });
+      }
     });
-    svg.innerHTML = h;
+    svg.innerHTML = h + handles;
     markUsedPins();
   }
   ed.renderWires = renderWires;
@@ -499,8 +533,13 @@
     const st = $('stage');
     st.addEventListener('pointerdown', (e) => {
       if (e.target.closest('#props') || e.target.closest('#stageTools')) return;
+      const hd = e.target.closest('.wpt, .wmid');
+      if (hd && !ed.running) { e.stopPropagation(); dragBend(e, hd.dataset.w, +hd.dataset.i, hd.classList.contains('wmid')); return; }
       const wh = e.target.closest('.wirehit');
-      if (wh && !ed.running) { ed.selWire = wh.dataset.w; select(null, true); ed.selWire = wh.dataset.w; renderWires(); renderProps(); return; }
+      if (wh && !ed.running) {
+        if (ed.selWire === wh.dataset.w) { const seg = nearestSegment(wh.dataset.w, ed.toWorld(e.clientX, e.clientY)); if (seg >= 0) { dragBend(e, wh.dataset.w, seg, true); return; } }
+        ed.selWire = wh.dataset.w; select(null, true); ed.selWire = wh.dataset.w; renderWires(); renderProps(); return;
+      }
       if (e.target.closest('.part')) return;
       if (ed.armed) { cancelArm(); return; }
       if (!ed.running) select(null);
@@ -516,6 +555,8 @@
       const c = ed.toWorld(e.clientX, e.clientY);
       $('wireOverlay').innerHTML = `<path d="${routePath(a, c)}" stroke="#ff9a3c" stroke-width="2" fill="none" stroke-dasharray="4 3"/>`;
     });
+    $('wires').addEventListener('pointerover', (e) => { const wh = e.target.closest('.wirehit'); if (wh) highlightNet(wh.dataset.w); });
+    $('wires').addEventListener('pointerout', (e) => { if (e.target.closest('.wirehit')) highlightNet(null); });
     st.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY); }, { passive: false });
     $('zoomIn').onclick = () => { const r = st.getBoundingClientRect(); zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); };
     $('zoomOut').onclick = () => { const r = st.getBoundingClientRect(); zoomAt(1 / 1.2, r.left + r.width / 2, r.top + r.height / 2); };
@@ -523,6 +564,141 @@
     window.addEventListener('resize', applyView);
     applyView(); hint();
   };
+
+  function snapPt(q, w, i) {
+    let x = Math.round(q.x / 4) * 4, y = Math.round(q.y / 4) * 4;
+    const a = ed.pinPos(w.a.p, w.a.pin), b = ed.pinPos(w.b.p, w.b.pin);
+    const pts = [a].concat(w.points).concat([b]);
+    [pts[i], pts[i + 2]].forEach((n) => { if (!n) return; if (Math.abs(n.x - x) < 6) x = n.x; if (Math.abs(n.y - y) < 6) y = n.y; });
+    return { x, y };
+  }
+  let lastPt = null;
+  function dragBend(e, wid, i, insert) {
+    const w = ed.project.wires.find((x) => x.id === wid); if (!w) return;
+    w.points = w.points || [];
+    ed.selWire = wid;
+    const now = performance.now();
+    if (!insert && lastPt && lastPt.w === wid && lastPt.i === i && now - lastPt.t < 400) { // double-click a point: remove it
+      lastPt = null; snapshot(); w.points.splice(i, 1); renderWires(); renderProps(); changed('move'); return;
+    }
+    lastPt = insert ? null : { w: wid, i, t: now };
+    const c0 = ed.toWorld(e.clientX, e.clientY);
+    let started = false;
+    const mv = (ev) => {
+      const c = ed.toWorld(ev.clientX, ev.clientY);
+      if (!started) {
+        if (Math.abs(c.x - c0.x) + Math.abs(c.y - c0.y) < 3) return;
+        started = true; lastPt = null; snapshot();
+        if (insert) w.points.splice(i, 0, { x: c.x, y: c.y });
+      }
+      w.points[i] = snapPt(c, w, i); renderWires();
+    };
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); if (!w.points.length) delete w.points; renderProps(); if (started) changed('move'); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+    renderWires();
+  }
+  function nearestSegment(wid, c) {
+    const w = ed.project.wires.find((x) => x.id === wid); if (!w) return -1;
+    const pts = [ed.pinPos(w.a.p, w.a.pin)].concat(w.points || []).concat([ed.pinPos(w.b.p, w.b.pin)]);
+    let best = -1, bd = 1e9;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p = pts[i], q = pts[i + 1], vx = q.x - p.x, vy = q.y - p.y, L = vx * vx + vy * vy || 1;
+      const t = Math.max(0, Math.min(1, ((c.x - p.x) * vx + (c.y - p.y) * vy) / L));
+      const dx = p.x + t * vx - c.x, dy = p.y + t * vy - c.y, dd = dx * dx + dy * dy;
+      if (dd < bd) { bd = dd; best = i; }
+    }
+    return best;
+  }
+  function highlightNet(wid) {
+    const svg = $('wires');
+    svg.querySelectorAll('.wire.hl').forEach((x) => x.classList.remove('hl'));
+    svg.classList.toggle('dim', !!wid);
+    if (!wid) return;
+    const w = ed.project.wires.find((x) => x.id === wid); if (!w) return;
+    const nets = ed.nets(), n = nets.netOf(w.a.p, w.a.pin);
+    ed.project.wires.forEach((x) => { if (nets.netOf(x.a.p, x.a.pin) === n) { const el = svg.querySelector(`.wire[data-wl="${x.id}"]`); if (el) el.classList.add('hl'); } });
+  }
+
+  /* ---------- automatic wire routing (A* on a grid, avoids parts, spreads parallel wires) ---------- */
+  function partRect(p) {
+    const n = ed.els[p.id]; if (!n) return null;
+    const [w, h] = (p.rot || 0) % 180 ? [n.h, n.w] : [n.w, n.h];
+    return { x0: p.x, y0: p.y, x1: p.x + w, y1: p.y + h };
+  }
+  function routeAll(onlyId) {
+    const G = 8, parts = ed.project.parts, rects = {};
+    let X0 = 1e9, Y0 = 1e9, X1 = -1e9, Y1 = -1e9;
+    parts.forEach((p) => { const r = partRect(p); if (!r) return; rects[p.id] = r; X0 = Math.min(X0, r.x0); Y0 = Math.min(Y0, r.y0); X1 = Math.max(X1, r.x1); Y1 = Math.max(Y1, r.y1); });
+    X0 -= 80; Y0 -= 80; X1 += 80; Y1 += 80;
+    const W = Math.ceil((X1 - X0) / G), H = Math.ceil((Y1 - Y0) / G);
+    const owner = new Int32Array(W * H).fill(-1), used = new Float32Array(W * H);
+    const ids = parts.map((p) => p.id);
+    parts.forEach((p, k) => {
+      const r = rects[p.id]; if (!r) return;
+      for (let gy = Math.max(0, Math.floor((r.y0 - 3 - Y0) / G)); gy <= Math.min(H - 1, Math.floor((r.y1 + 3 - Y0) / G)); gy++)
+        for (let gx = Math.max(0, Math.floor((r.x0 - 3 - X0) / G)); gx <= Math.min(W - 1, Math.floor((r.x1 + 3 - X0) / G)); gx++) owner[gy * W + gx] = k;
+    });
+    const cell = (q) => [Math.max(0, Math.min(W - 1, Math.round((q.x - X0) / G))), Math.max(0, Math.min(H - 1, Math.round((q.y - Y0) / G)))];
+    const DX = [1, -1, 0, 0], DY = [0, 0, 1, -1];
+    const list = ed.project.wires.filter((w) => !onlyId || w.id === onlyId).map((w) => ({ w, a: ed.pinPos(w.a.p, w.a.pin), b: ed.pinPos(w.b.p, w.b.pin) }))
+      .filter((x) => x.a && x.b).sort((u, v) => (Math.abs(u.a.x - u.b.x) + Math.abs(u.a.y - u.b.y)) - (Math.abs(v.a.x - v.b.x) + Math.abs(v.a.y - v.b.y)));
+    ed.project.wires.forEach((w) => { if (onlyId && w.id !== onlyId && w.points) markUsed(w); });
+    function markUsed(w) {
+      const a = ed.pinPos(w.a.p, w.a.pin), b = ed.pinPos(w.b.p, w.b.pin); if (!a || !b) return;
+      const pts = [a].concat(w.points || []).concat([b]);
+      for (let i = 0; i < pts.length - 1; i++) { const [x0, y0] = cell(pts[i]), [x1, y1] = cell(pts[i + 1]); for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) used[y0 * W + x] += 1; for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) used[y * W + x1] += 1; }
+    }
+    list.forEach(({ w, a, b }) => {
+      const ka = ids.indexOf(w.a.p), kb = ids.indexOf(w.b.p);
+      const [sx, sy] = cell(a), [tx, ty] = cell(b);
+      const N = W * H * 4, gScore = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1);
+      const heap = [];
+      const push = (f, s2) => { heap.push([f, s2]); let i = heap.length - 1; while (i > 0) { const pI = (i - 1) >> 1; if (heap[pI][0] <= heap[i][0]) break; [heap[pI], heap[i]] = [heap[i], heap[pI]]; i = pI; } };
+      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+      const hcost = (x, y) => Math.abs(x - tx) + Math.abs(y - ty);
+      for (let d = 0; d < 4; d++) { const s0 = (sy * W + sx) * 4 + d; gScore[s0] = 0; push(hcost(sx, sy), s0); }
+      let goal = -1, guard = 0;
+      while (heap.length && guard++ < 400000) {
+        const [, cur] = pop(); const c = cur >> 2, dir = cur & 3, cx = c % W, cy = (c / W) | 0;
+        if (cx === tx && cy === ty) { goal = cur; break; }
+        const g0 = gScore[cur];
+        for (let d = 0; d < 4; d++) {
+          const nx = cx + DX[d], ny = cy + DY[d]; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const nc = ny * W + nx, o = owner[nc];
+          let cost = 1 + used[nc] * 3 + (d !== dir ? 4 : 0);
+          if (o >= 0) cost += (o === ka || o === kb) ? 3 : 60;
+          const ns = nc * 4 + d, ng = g0 + cost;
+          if (ng < gScore[ns]) { gScore[ns] = ng; from[ns] = cur; push(ng + hcost(nx, ny), ns); }
+        }
+      }
+      if (goal < 0) return;
+      const cells = []; for (let s2 = goal; s2 >= 0; s2 = from[s2]) cells.push(s2 >> 2);
+      cells.reverse();
+      const pts = [];
+      for (let i = 1; i < cells.length - 1; i++) {
+        const p0 = cells[i - 1], p1 = cells[i], p2 = cells[i + 1];
+        const d1 = p1 - p0, d2 = p2 - p1;
+        if (d1 !== d2) pts.push({ x: X0 + (p1 % W) * G, y: Y0 + ((p1 / W) | 0) * G });
+      }
+      // line the first and last bends up with the pins so the ends leave straight
+      if (pts.length) {
+        const f = pts[0], l = pts[pts.length - 1];
+        if (Math.abs(f.y - a.y) <= G) f.y = a.y; else if (Math.abs(f.x - a.x) <= G) f.x = a.x;
+        if (Math.abs(l.y - b.y) <= G) l.y = b.y; else if (Math.abs(l.x - b.x) <= G) l.x = b.x;
+      }
+      w.points = pts;
+      markUsed(w);
+    });
+  }
+  ed.autoRoute = function (onlyId) {
+    if (ed.running || !ed.project.wires.length) return;
+    snapshot(); routeAll(onlyId); renderWires(); renderProps(); changed('move');
+  };
+  ed.clearBends = function (onlyId) {
+    if (ed.running) return;
+    snapshot(); ed.project.wires.forEach((w) => { if (!onlyId || w.id === onlyId) delete w.points; }); renderWires(); renderProps(); changed('move');
+  };
+  ed.setWireStyle = function (st) { ed.project.wireStyle = st; renderWires(); changed('style'); };
 
   ed.rotateSel = function () {
     const p = ed.part(ed.sel); if (!p || ed.running) return;
@@ -544,9 +720,12 @@
       box.hidden = false;
       box.innerHTML = `<h3>สายไฟ</h3><div class="muted small">${P[pa.type].name} ${w.a.pin} ↔ ${P[pb.type].name} ${w.b.pin}</div>
         <div class="row"><label>สี</label>${['#6b6b6b', '#e5484d', ...SIG_COLORS].map((c) => `<span data-c="${c}" style="width:16px;height:16px;border-radius:50%;background:${c};display:inline-block;cursor:pointer;outline:${c === w.color ? '2px solid #fff' : 'none'}"></span>`).join('')}</div>
-        <div class="btnrow"><button class="btn" data-act="delwire">ลบสาย</button></div>`;
+        <div class="muted small" style="margin-top:6px">ลากสายเพื่อดัดเป็นมุม · ลากจุดกลมเพื่อย้าย · ดับเบิลคลิกจุดเพื่อลบ</div>
+        <div class="btnrow"><button class="btn" data-act="routeone">จัดเส้นนี้อัตโนมัติ</button><button class="btn" data-act="clearone" ${(w.points || []).length ? '' : 'disabled'}>ล้างจุดหักมุม</button><button class="btn" data-act="delwire">ลบสาย</button></div>`;
       box.querySelectorAll('[data-c]').forEach((s) => s.onclick = () => { w.color = s.dataset.c; renderWires(); renderProps(); changed('style'); });
       box.querySelector('[data-act=delwire]').onclick = () => ed.removeWire(w.id);
+      box.querySelector('[data-act=routeone]').onclick = () => ed.autoRoute(w.id);
+      box.querySelector('[data-act=clearone]').onclick = () => ed.clearBends(w.id);
       return;
     }
     const p = ed.part(ed.sel);

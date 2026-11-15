@@ -43,6 +43,11 @@
       <div id="partsLayer"></div>
       <svg id="wireOverlay" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
+    <div id="wireTools">
+      <select id="wireStyle" title="รูปแบบสาย"><option value="ortho">สายหักฉาก</option><option value="straight">สายตรง</option><option value="curve">สายโค้ง</option></select>
+      <button class="tb" id="btnRoute" title="จัดสายทุกเส้นให้อ้อมชิ้นส่วนและไม่ซ้อนกัน">จัดสายอัตโนมัติ</button>
+      <button class="tb" id="btnClearBends" title="ล้างจุดหักมุมทุกเส้น">ล้างจุดหักมุม</button>
+    </div>
     <div id="stageTools">
       <button class="tb" id="zoomOut" title="ซูมออก">−</button>
       <span id="zoomLbl">150%</span>

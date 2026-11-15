@@ -1,7 +1,7 @@
 {
   "name": "iotforge",
   "productName": "IoTForge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "โปรแกรมจำลองวงจร IoT แบบออฟไลน์ มีโหมด Basic (Block) และ Advanced (C++)",
   "main": "electron/main.js",
   "author": "IoTForge Contributors",
@@ -61,10 +61,12 @@
         }
       ],
       "category": "public.app-category.education",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "IoTForge-mac-${arch}.${ext}"
     },
     "dmg": {
-      "title": "IoTForge ${version}"
+      "title": "IoTForge ${version}",
+      "artifactName": "IoTForge-mac-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -87,10 +89,10 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "artifactName": "IoTForge-Setup-${version}.${ext}"
+      "artifactName": "IoTForge-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "IoTForge-Portable-${version}.${ext}"
+      "artifactName": "IoTForge-Portable.${ext}"
     },
     "linux": {
       "target": [
@@ -98,7 +100,8 @@
       ],
       "category": "Education",
       "icon": "build/icon.png",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "artifactName": "IoTForge-linux.${ext}"
     },
     "publish": null
   },
