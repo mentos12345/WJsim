@@ -9,7 +9,7 @@
   "homepage": "https://mentos12345.github.io/iotforge/",
   "scripts": {
     "start": "electron .",
-    "vendor": "node scripts/vendor.js",
+    "vendor": "npm install --no-save @wokwi/elements@1.9.2 blockly@13.4.0 codemirror@5.65.21 esbuild && node scripts/vendor.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -17,12 +17,8 @@
     "test": "node scripts/test-transpile.js"
   },
   "devDependencies": {
-    "@wokwi/elements": "1.9.2",
-    "blockly": "13.4.0",
-    "codemirror": "5.65.21",
     "electron": "^45.3.2",
-    "electron-builder": "^26.18.0",
-    "esbuild": "^0.28.2"
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "org.iotforge.app",
