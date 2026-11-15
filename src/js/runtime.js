@@ -1,4 +1,4 @@
-/* Wongjorn — simulation runtime: Arduino API + library shims driving the parts on the canvas */
+/* WJSIM — simulation runtime: Arduino API + library shims driving the parts on the canvas */
 (function () {
   'use strict';
   const ed = IOTF.editor, P = IOTF.PARTS;

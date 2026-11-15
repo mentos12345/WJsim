@@ -1,4 +1,4 @@
-/* Wongjorn — example projects */
+/* WJSIM — example projects */
 (function () {
   'use strict';
   // tiny helpers to write Blockly JSON state
@@ -39,18 +39,18 @@
     id: 'dht-dash', mode: 'basic', board: 'esp32', title: 'วัดอุณหภูมิส่งขึ้น Dashboard', desc: 'DHT22 + OLED + WiFi/MQTT แสดงค่าบนจอและบน Dashboard',
     parts: [{ id: 'dht1', type: 'dht22', x: 230, y: 20 }, { id: 'oled1', type: 'ssd1306', x: 220, y: 150 }],
     wires: [['dht1', 'SDA', 'D15'], ['oled1', 'DATA', 'D21'], ['oled1', 'CLK', 'D22']],
-    blocks: main([blk('iotf_wifi', { SSID: 'Wongjorn-WiFi', PASS: '' })], [
+    blocks: main([blk('iotf_wifi', { SSID: 'WJSIM-WiFi', PASS: '' })], [
       setv('temp', blk('iotf_dht', { WHAT: 'T', PIN: '15' })),
       setv('hum', blk('iotf_dht', { WHAT: 'H', PIN: '15' })),
       blk('iotf_oled_clear'),
       blk('iotf_oled_print', { X: 0, Y: 0, S: 2 }, { TEXT: inp(join('T ', getv('temp'), ' C')) }),
       blk('iotf_oled_print', { X: 0, Y: 30, S: 2 }, { TEXT: inp(join('H ', getv('hum'), ' %')) }),
-      blk('iotf_mqtt_publish', { TOPIC: 'wongjorn/temp' }, { VALUE: inp(getv('temp')) }),
-      blk('iotf_mqtt_publish', { TOPIC: 'wongjorn/humidity' }, { VALUE: inp(getv('hum')) }),
+      blk('iotf_mqtt_publish', { TOPIC: 'wjsim/temp' }, { VALUE: inp(getv('temp')) }),
+      blk('iotf_mqtt_publish', { TOPIC: 'wjsim/humidity' }, { VALUE: inp(getv('hum')) }),
       print(join('อุณหภูมิ ', getv('temp'), ' °C  ความชื้น ', getv('hum'), ' %')),
       wait(2000)
     ], ['temp', 'hum']),
-    widgets: [{ type: 'gauge', title: 'อุณหภูมิ', topic: 'wongjorn/temp', unit: '°C', min: 0, max: 50 }, { type: 'value', title: 'ความชื้น', topic: 'wongjorn/humidity', unit: '%', chart: true }]
+    widgets: [{ type: 'gauge', title: 'อุณหภูมิ', topic: 'wjsim/temp', unit: '°C', min: 0, max: 50 }, { type: 'value', title: 'ความชื้น', topic: 'wjsim/humidity', unit: '%', chart: true }]
   });
   T.push({
     id: 'distance', mode: 'basic', board: 'esp32', title: 'เตือนเมื่อมีของเข้าใกล้', desc: 'HC-SR04 วัดระยะ ถ้าใกล้กว่า 20 cm ให้ buzzer ดังและไฟแดงติด',
@@ -73,7 +73,7 @@
     id: 'water', mode: 'basic', board: 'esp32', title: 'ตรวจคุณภาพน้ำ (pH + TDS)', desc: 'อ่านค่า pH และ TDS แสดงบน LCD และส่งขึ้น Dashboard',
     parts: [{ id: 'ph1', type: 'iotf-ph', x: 220, y: 0 }, { id: 'tds1', type: 'iotf-tds', x: 220, y: 120 }, { id: 'lcd1', type: 'lcd1602', x: 210, y: 230 }],
     wires: [['ph1', 'Po', 'D34'], ['tds1', 'A', 'D35'], ['lcd1', 'SDA', 'D21'], ['lcd1', 'SCL', 'D22']],
-    blocks: main([blk('iotf_wifi', { SSID: 'Wongjorn-WiFi', PASS: '' })], [
+    blocks: main([blk('iotf_wifi', { SSID: 'WJSIM-WiFi', PASS: '' })], [
       setv('ph', blk('iotf_ph', { PIN: '34' })), setv('tds', blk('iotf_tds', { PIN: '35' })),
       blk('iotf_lcd_clear'),
       blk('iotf_lcd_print', { ROW: 0, COL: 0 }, { TEXT: inp(join('pH  ', getv('ph'))) }),
@@ -109,7 +109,7 @@
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
 
-const char* ssid = "Wongjorn-WiFi";
+const char* ssid = "WJSIM-WiFi";
 const char* password = "";
 const char* broker = "broker.hivemq.com";
 
@@ -299,7 +299,7 @@ void setup() {
   Serial2.begin(9600, SERIAL_8N1, 16, 17);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.setTextColor(SSD1306_WHITE);
-  WiFi.begin("Wongjorn-WiFi", "");
+  WiFi.begin("WJSIM-WiFi", "");
   while (WiFi.status() != WL_CONNECTED) delay(300);
   mqtt.setServer("broker.hivemq.com", 1883);
 }

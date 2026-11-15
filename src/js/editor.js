@@ -1,4 +1,4 @@
-/* Wongjorn — circuit editor: parts, wires, nets, checks, properties */
+/* WJSIM — circuit editor: parts, wires, nets, checks, properties */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);

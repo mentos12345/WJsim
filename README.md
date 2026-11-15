@@ -1,4 +1,4 @@
-# ⚡ Wongjorn
+# ⚡ WJSIM
 
 โปรแกรมจำลองวงจร IoT แบบ Tinkercad/Wokwi ที่ทำงาน **ออฟไลน์ 100%** บน Windows, macOS และ Linux
 มี 2 โหมด:
@@ -32,7 +32,7 @@ npm test           # ตรวจว่าโค้ดตัวอย่าง�
 ## สร้างไฟล์ติดตั้ง
 
 ```bash
-npm run dist:win     # Windows: Wongjorn-Setup-x.y.z.exe และแบบ Portable
+npm run dist:win     # Windows: WJSIM-Setup-x.y.z.exe และแบบ Portable
 npm run dist:mac     # macOS: .dmg (ต้อง build บนเครื่อง Mac)
 npm run dist:linux   # Linux: .AppImage
 ```

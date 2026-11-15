@@ -1,4 +1,4 @@
-/* Wongjorn — app shell */
+/* WJSIM — app shell */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -10,7 +10,7 @@
 
   /* ---------- project model ---------- */
   function newProject(mode = 'basic', boardKey = 'esp32') {
-    return { app: 'Wongjorn', version: 1, name: 'ไม่มีชื่อ', mode, parts: [], wires: [], blocks: null, code: '', codeManual: false, widgets: [], sdFiles: {} };
+    return { app: 'WJSIM', version: 1, name: 'ไม่มีชื่อ', mode, parts: [], wires: [], blocks: null, code: '', codeManual: false, widgets: [], sdFiles: {} };
   }
   function boardPart(boardKey) { return { id: 'board', type: IOTF.BOARDS[boardKey].tag, x: 40, y: 40, rot: 0, attrs: {}, sim: {} }; }
 
@@ -78,7 +78,7 @@
   function updateTitle() {
     const name = ed.project.name || 'ไม่มีชื่อ';
     $('projName').textContent = (app.isDirty ? '● ' : '') + name;
-    document.title = `${app.isDirty ? '● ' : ''}${name} — Wongjorn`;
+    document.title = `${app.isDirty ? '● ' : ''}${name} — WJSIM`;
     if (host && host.setTitle) host.setTitle(document.title);
   }
   let saveT = null;
@@ -168,7 +168,7 @@
   function loadFromText(text, path, name) {
     try {
       const p = JSON.parse(text);
-      if (!p || !Array.isArray(p.parts)) throw new Error('ไม่ใช่ไฟล์โปรเจกต์ Wongjorn');
+      if (!p || !Array.isArray(p.parts)) throw new Error('ไม่ใช่ไฟล์โปรเจกต์ WJSIM');
       p.name = p.name && p.name !== 'ไม่มีชื่อ' ? p.name : (name || 'project').replace(/\.(iotf|json)$/i, '');
       openProject(p, { path });
       toast('เปิด ' + p.name);
@@ -177,7 +177,7 @@
   app.loadFromText = loadFromText;
   async function exportIno() {
     const code = ed.project.codeManual ? app.cm.getValue() : blocks.code();
-    const header = `// ${ed.project.name} — ส่งออกจาก Wongjorn สำหรับบอร์ด ${ed.boardDef().name}\n`;
+    const header = `// ${ed.project.name} — ส่งออกจาก WJSIM สำหรับบอร์ด ${ed.boardDef().name}\n`;
     if (host && host.exportIno) await host.exportIno(header + code, fileName() + '.ino');
     else download(fileName() + '.ino', header + code, 'text/plain');
   }
@@ -221,16 +221,16 @@
   app.loadTemplate = loadTemplate;
   function showAbout() {
     const m = $('modal'), dlg = $('dialog');
-    dlg.innerHTML = `<h2>Wongjorn ${VERSION}</h2>
+    dlg.innerHTML = `<h2>WJSIM ${VERSION}</h2>
       <p>โปรแกรมจำลองวงจร IoT ใช้งานแบบออฟไลน์ ฟรี และเป็นโอเพนซอร์ส (MIT License)</p>
       <h4>คีย์ลัด</h4><p class="small">Ctrl/⌘+S บันทึก · Ctrl/⌘+O เปิด · Ctrl/⌘+N ใหม่ · Ctrl/⌘+Enter เริ่ม/หยุดจำลอง · Ctrl/⌘+Z ย้อน · R หมุนชิ้นส่วน · Delete ลบ · Esc ยกเลิกการต่อสาย · ล้อเมาส์ ซูม · ลากพื้นที่ว่าง เลื่อนมุมมอง</p>
       <h4>เครดิตและสัญญาอนุญาต</h4>
       <p class="small"><b>ภาพอุปกรณ์ 50 ชิ้น</b> จาก wokwi-elements 1.9.2 © 2020 Uri Shaked — MIT License<br>
-      <b>ภาพอุปกรณ์ 7 ชิ้น</b> (pH, TDS, Load Cell, RC522, NEO-6M, SX1278, Relay 4 ช่อง) วาดขึ้นใหม่สำหรับ Wongjorn — MIT License<br>
+      <b>ภาพอุปกรณ์ 7 ชิ้น</b> (pH, TDS, Load Cell, RC522, NEO-6M, SX1278, Relay 4 ช่อง) วาดขึ้นใหม่สำหรับ WJSIM — MIT License<br>
       <b>Blockly</b> 13 © Google LLC — Apache License 2.0<br>
       <b>CodeMirror</b> 5 © Marijn Haverbeke and others — MIT License<br>
       <b>Electron</b> © OpenJS Foundation and Electron contributors — MIT License</p>
-      <p class="small muted">ข้อความสัญญาอนุญาตฉบับเต็มอยู่ในไฟล์ LICENSE, CREDITS.md และโฟลเดอร์ vendor ของแอป · ชื่อผลิตภัณฑ์ เช่น Arduino และ ESP32 เป็นเครื่องหมายการค้าของเจ้าของแต่ละราย Wongjorn ไม่มีส่วนเกี่ยวข้องกับเจ้าของเหล่านั้น</p>
+      <p class="small muted">ข้อความสัญญาอนุญาตฉบับเต็มอยู่ในไฟล์ LICENSE, CREDITS.md และโฟลเดอร์ vendor ของแอป · ชื่อผลิตภัณฑ์ เช่น Arduino และ ESP32 เป็นเครื่องหมายการค้าของเจ้าของแต่ละราย WJSIM ไม่มีส่วนเกี่ยวข้องกับเจ้าของเหล่านั้น</p>
       <h4>ข้อจำกัดของตัวจำลอง</h4>
       <p class="small muted">โค้ด C++ ถูกแปลงไปรันในตัวจำลอง รองรับคำสั่ง Arduino ทั่วไปและไลบรารียอดนิยม (WiFi, PubSubClient, DHT, Servo, LiquidCrystal_I2C, Adafruit SSD1306/ILI9341/NeoPixel/MPU6050, HX711, MFRC522, TinyGPSPlus, LoRa, RTClib, SD, Keypad, Stepper, IRremote) แต่ยังไม่รองรับ struct/class ที่เขียนเอง และไม่ได้จำลองไฟฟ้าแบบละเอียด ควรทดสอบกับบอร์ดจริงก่อนใช้งานจริง</p>
       <div class="foot"><button class="btn pri" id="abClose">ปิด</button></div>`;

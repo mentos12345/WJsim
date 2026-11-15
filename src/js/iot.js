@@ -1,4 +1,4 @@
-/* Wongjorn — in-app MQTT broker, dashboard widgets, LoRa radio, and a bus between app windows */
+/* WJSIM — in-app MQTT broker, dashboard widgets, LoRa radio, and a bus between app windows */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);

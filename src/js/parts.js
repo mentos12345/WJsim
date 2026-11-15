@@ -1,6 +1,6 @@
-/* Wongjorn — parts registry
+/* WJSIM — parts registry
  * 50 parts come from wokwi-elements (MIT, (c) 2020 Uri Shaked).
- * 7 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay) are original drawings (MIT, Wongjorn contributors).
+ * 7 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay) are original drawings (MIT, WJSIM contributors).
  */
 window.IOTF = window.IOTF || {};
 (function () {
