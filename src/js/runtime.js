@@ -1022,6 +1022,25 @@
     sim.stop(true);
   }
 
+  /* ---------- names the code editor can suggest ---------- */
+  // an environment built only to read its names; nothing in it runs
+  let hintCache = null;
+  sim.hintEnv = function () {
+    const b = ed.board(); if (!b) return {};
+    const key = b.type;
+    if (hintCache && hintCache.key === key) return hintCache.env;
+    let env = {};
+    const keepNets = sim.nets;
+    try {
+      if (!sim.nets) sim.nets = ed.nets();
+      env = makeEnv({ id: 'hint', part: b, bd: ed.boardDef(b), name: '', out: {}, tones: {}, ints: [], serialIn: '', loraRx: [], pinModeHint: new Set(),
+        atLineStart: true, mac: '', macBytes: [0, 0, 0, 0, 0, 0], udp: [], servers: [], wifi: { status: 0 } });
+    } catch (e) { env = {}; }
+    if (!keepNets) sim.nets = keepNets;
+    hintCache = { key, env };
+    return env;
+  };
+
   /* ---------- the air between boards ---------- */
   function later(ms, fn) { const gen = sim.gen; sim.timers.push(setTimeout(() => { if (sim.running && gen === sim.gen) fn(); }, ms)); }
   function clonePayload(x) {

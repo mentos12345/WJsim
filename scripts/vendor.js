@@ -8,7 +8,7 @@ require('esbuild').buildSync({ stdin: { contents: "import '@wokwi/elements';", r
 cp('blockly/blockly.min.js', 'blockly.min.js');
 cp('blockly/msg/th.js', 'blockly-msg-th.js');
 fs.cpSync(path.join(nm, 'blockly/media'), path.join(out, 'blockly-media'), { recursive: true });
-['lib/codemirror.js', 'lib/codemirror.css', 'mode/clike/clike.js', 'addon/edit/closebrackets.js', 'addon/edit/matchbrackets.js', 'theme/material-darker.css']
+['lib/codemirror.js', 'lib/codemirror.css', 'mode/clike/clike.js', 'addon/edit/closebrackets.js', 'addon/edit/matchbrackets.js', 'addon/hint/show-hint.js', 'addon/hint/show-hint.css', 'theme/material-darker.css']
   .forEach((f) => cp('codemirror/' + f, 'codemirror/' + path.basename(f)));
 cp('@wokwi/elements/LICENSE', 'LICENSE-wokwi-elements.txt');
 cp('blockly/LICENSE', 'LICENSE-blockly.txt');

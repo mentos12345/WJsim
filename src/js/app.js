@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.1';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
   app.pageTitle = document.title;
@@ -296,6 +296,7 @@
   function init() {
     ed.initStage(); ed.initPalette(); blocks.init(); iot.init();
     app.cm = CodeMirror($('codeHost'), { mode: 'text/x-c++src', theme: 'material-darker', lineNumbers: true, matchBrackets: true, autoCloseBrackets: true, indentUnit: 2, tabSize: 2, value: '' });
+    if (IOTF.autocomplete) IOTF.autocomplete.attach(app.cm);
     app.cm.on('change', () => {
       if (settingCode) return;
       ed.project.code = app.cm.getValue(); ed.project.codeManual = true; clearErrMarks(); updateCodeSource(); app.dirty();
