@@ -6,7 +6,7 @@
   "main": "electron/main.js",
   "author": "WJSIM Contributors",
   "license": "MIT",
-  "homepage": "https://mentos12345.github.io/iotforge/",
+  "homepage": "https://mentos12345.github.io/WJsim/",
   "scripts": {
     "start": "electron .",
     "vendor": "npm install --no-save @wokwi/elements@1.9.2 blockly@13.4.0 codemirror@5.65.21 esbuild && node scripts/vendor.js",
@@ -108,6 +108,6 @@
   "desktopName": "wjsim.desktop",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mentos12345/iotforge.git"
+    "url": "https://github.com/mentos12345/WJsim.git"
   }
 }

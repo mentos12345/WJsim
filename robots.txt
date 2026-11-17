@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mentos12345.github.io/iotforge/sitemap.xml
+Sitemap: https://mentos12345.github.io/WJsim/sitemap.xml

@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WJSIM – โปรแกรมจำลองวงจร IoT ฟรี ใช้ออฟไลน์</title>
 <meta name="description" content="WJSIM โปรแกรมจำลองวงจร IoT ฟรี ใช้ออฟไลน์ได้ ลากอุปกรณ์ 57 ชิ้น ต่อสาย เขียนด้วย Block ภาษาไทยหรือ C++ แบบ Arduino รองรับ ESP32, MQTT, Dashboard และ LoRa สำหรับ Windows, macOS และ Linux">
-<link rel="canonical" href="https://mentos12345.github.io/iotforge/">
+<link rel="canonical" href="https://mentos12345.github.io/WJsim/">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="WJSIM">
 <meta property="og:title" content="WJSIM – โปรแกรมจำลองวงจร IoT ฟรี ใช้ออฟไลน์">
 <meta property="og:description" content="WJSIM โปรแกรมจำลองวงจร IoT ฟรี ใช้ออฟไลน์ได้ ลากอุปกรณ์ 57 ชิ้น ต่อสาย เขียนด้วย Block ภาษาไทยหรือ C++ แบบ Arduino รองรับ ESP32, MQTT, Dashboard และ LoRa สำหรับ Windows, macOS และ Linux">
-<meta property="og:url" content="https://mentos12345.github.io/iotforge/">
-<meta property="og:image" content="https://mentos12345.github.io/iotforge/og-image.jpg">
+<meta property="og:url" content="https://mentos12345.github.io/WJsim/">
+<meta property="og:image" content="https://mentos12345.github.io/WJsim/og-image.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:locale" content="th_TH">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#16171a">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"WJSIM","applicationCategory":"EducationalApplication","operatingSystem":"Windows, macOS, Linux","softwareVersion":"1.0.2","offers":{"@type":"Offer","price":"0","priceCurrency":"THB"},"description":"WJSIM โปรแกรมจำลองวงจร IoT ฟรี ใช้ออฟไลน์ได้ ลากอุปกรณ์ 57 ชิ้น ต่อสาย เขียนด้วย Block ภาษาไทยหรือ C++ แบบ Arduino รองรับ ESP32, MQTT, Dashboard และ LoRa สำหรับ Windows, macOS และ Linux","url":"https://mentos12345.github.io/iotforge/","inLanguage":"th"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"WJSIM","applicationCategory":"EducationalApplication","operatingSystem":"Windows, macOS, Linux","softwareVersion":"1.0.2","offers":{"@type":"Offer","price":"0","priceCurrency":"THB"},"description":"WJSIM โปรแกรมจำลองวงจร IoT ฟรี ใช้ออฟไลน์ได้ ลากอุปกรณ์ 57 ชิ้น ต่อสาย เขียนด้วย Block ภาษาไทยหรือ C++ แบบ Arduino รองรับ ESP32, MQTT, Dashboard และ LoRa สำหรับ Windows, macOS และ Linux","url":"https://mentos12345.github.io/WJsim/","inLanguage":"th"}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
@@ -7527,11 +7527,11 @@ window.IOTF = window.IOTF || {};
 </script>
 <script>
 /* Set this to your GitHub Releases page once the installers are published */
-const RELEASE_URL = 'https://github.com/mentos12345/iotforge/releases/latest';
+const RELEASE_URL = 'https://github.com/mentos12345/WJsim/releases/latest';
 const DIRECT = {
-  Windows: 'https://github.com/mentos12345/iotforge/releases/latest/download/WJSIM-Setup.exe',
-  macOS: 'https://github.com/mentos12345/iotforge/releases/latest',
-  Linux: 'https://github.com/mentos12345/iotforge/releases/latest/download/WJSIM-linux.AppImage'
+  Windows: 'https://github.com/mentos12345/WJsim/releases/latest/download/WJSIM-Setup.exe',
+  macOS: 'https://github.com/mentos12345/WJsim/releases/latest',
+  Linux: 'https://github.com/mentos12345/WJsim/releases/latest/download/WJSIM-linux.AppImage'
 };
 const EXAMPLES = [{"title":"ไฟกระพริบ","desc":"โปรเจกต์แรก: LED ติด-ดับทุกครึ่งวินาที","mode":"basic","board":"ESP32"},{"title":"กดปุ่มเปิดไฟ","desc":"กดปุ่มค้างไว้แล้ว LED ติด ปล่อยแล้วดับ","mode":"basic","board":"ESP32"},{"title":"วัดอุณหภูมิส่งขึ้น Dashboard","desc":"DHT22 + OLED + WiFi/MQTT แสดงค่าบนจอและบน Dashboard","mode":"basic","board":"ESP32"},{"title":"เตือนเมื่อมีของเข้าใกล้","desc":"HC-SR04 วัดระยะ ถ้าใกล้กว่า 20 cm ให้ buzzer ดังและไฟแดงติด","mode":"basic","board":"ESP32"},{"title":"หมุนลูกบิดคุม Servo","desc":"Arduino Uno: หมุน Potentiometer แล้ว Servo หมุนตาม","mode":"basic","board":"Arduino Uno"},{"title":"ตรวจคุณภาพน้ำ (pH + TDS)","desc":"อ่านค่า pH และ TDS แสดงบน LCD และส่งขึ้น Dashboard","mode":"basic","board":"ESP32"},{"title":"ไฟวงแหวน NeoPixel","desc":"ไล่สีไฟทีละดวงรอบวงแหวน 16 ดวง","mode":"basic","board":"ESP32"},{"title":"Smart Home ผ่าน MQTT","desc":"คุม Relay 4 ช่องจาก Dashboard + ส่งอุณหภูมิ/ความชื้น + จอ LCD","mode":"advanced","board":"ESP32"},{"title":"ประตูล็อกด้วยบัตร RFID","desc":"RC522 + Servo + Buzzer: แตะบัตรที่ถูกต้องแล้วประตูเปิด 3 วินาที","mode":"advanced","board":"ESP32"},{"title":"ส่งข้อมูลทางไกลด้วย LoRa","desc":"SX1278 ส่งอุณหภูมิทุก 3 วินาที และรับแพ็กเก็ตที่ส่งเข้ามา (ลองพิมพ์ในแท็บ LoRa)","mode":"advanced","board":"ESP32"},{"title":"GPS Tracker","desc":"NEO-6M ผ่าน Serial2 แสดงพิกัดบน OLED และส่งขึ้น MQTT","mode":"advanced","board":"ESP32"},{"title":"เครื่องชั่งน้ำหนัก","desc":"HX711 + Load cell แสดงน้ำหนักบน LCD 16×2 (ปรับน้ำหนักในแผงคุณสมบัติของ HX711)","mode":"advanced","board":"ESP32"},{"title":"ตรวจจับการเอียง/ล้ม (MPU6050)","desc":"อ่านค่า Accel/Gyro เตือนด้วย NeoPixel เมื่อเอียงมาก (ปรับค่าในแผงคุณสมบัติ)","mode":"advanced","board":"ESP32"}];
 
