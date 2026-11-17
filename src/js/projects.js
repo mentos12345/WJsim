@@ -90,7 +90,7 @@
       p.name = name;
     }
     try { await saveCurrent(); } catch (e) { app.toast('บันทึกไม่ได้: ' + e.message); return false; }
-    app.isDirty = false; app.updateTitle();
+    app.isDirty = false; app.updateTitle(); app.writeAutosave();
     app.toast(`บันทึก "${p.name}" ลงในโปรเจกต์ของฉันแล้ว`);
     if (!$('dash').hidden) render();
     return true;
@@ -114,7 +114,8 @@
         <div class="foot"><button class="btn" id="nameCancel">ยกเลิก</button><button class="btn primary" id="nameOk">บันทึก</button></div>`;
       m.hidden = false;
       const inp = $('nameIn'); inp.focus(); inp.select();
-      const done = (v) => { m.hidden = true; resolve(v); };
+      const done = (v) => { IOTF.app.onModalClose = null; m.hidden = true; resolve(v); };
+      IOTF.app.onModalClose = () => resolve(null);
       $('nameOk').onclick = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } done(v); };
       $('nameCancel').onclick = () => done(null);
       inp.onkeydown = (e) => { if (e.key === 'Enter') $('nameOk').click(); if (e.key === 'Escape') done(null); };

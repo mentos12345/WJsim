@@ -314,11 +314,26 @@
       const fr = new RegExp(`(?<![\\w.])(${userFns.join('|')})\\s*\\(`, 'g');
       s = s.replace(fr, (m, name, off, all) => (/function\s+$/.test(all.slice(Math.max(0, off - 12), off)) ? m : `await ${name}(`));
     }
+    // `await f().x` would read .x of the promise: make it `(await f()).x`
+    s = wrapAwaitMembers(s);
     // loop yields
     s = addLoopYields(s);
     return { code: P.restore(s), userFns };
   }
 
+  function wrapAwaitMembers(s) {
+    const re = /await [\w.]+\(/g, at = [];
+    let m; while ((m = re.exec(s))) at.push([m.index, m[0].length]);
+    // innermost (rightmost) first, so earlier positions stay valid
+    for (let k = at.length - 1; k >= 0; k--) {
+      const [start, len] = at[k];
+      let i = start + len, depth = 1;
+      while (i < s.length && depth) { if (s[i] === '(') depth++; else if (s[i] === ')') depth--; i++; }
+      if (depth) continue;
+      if (/^\s*[.[]/.test(s.slice(i, i + 40))) s = s.slice(0, start) + '(' + s.slice(start, i) + ')' + s.slice(i);
+    }
+    return s;
+  }
   function addLoopYields(s) {
     const re = /\b(while|for)\s*\(/g; let m;
     while ((m = re.exec(s))) {

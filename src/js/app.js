@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.3.0';
+  const VERSION = '1.3.1';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
   app.pageTitle = document.title;
@@ -33,6 +33,7 @@
     $('serialOut').textContent = ''; $('sdOut').textContent = 'ยังไม่มีไฟล์';
     app.path = opts.path || null; app.isDirty = !!opts.dirty; updateTitle();
     if (IOTF.projects) IOTF.projects.hide();
+    if (app.cm) setTimeout(writeAutosave, 0);
   }
 
   /* ---------- one program per board ---------- */
@@ -127,6 +128,7 @@
     if (host || app.isDirty) document.title = `${app.isDirty ? '● ' : ''}${name} — WJSIM`;
     else document.title = app.pageTitle;
     if (host && host.setTitle) host.setTitle(document.title);
+    try { localStorage.setItem('iotforge-autosave-dirty', app.isDirty ? '1' : ''); } catch (e) { /* storage unavailable */ }
     const sb = $('btnSave');
     if (sb) { sb.classList.toggle('dirty', app.isDirty); $('saveLabel').textContent = app.isDirty || !ed.project.dashId ? 'บันทึก' : 'บันทึกแล้ว'; }
   }
@@ -135,8 +137,14 @@
   app.dirty = function () {
     app.isDirty = true; updateTitle();
     clearTimeout(saveT);
-    saveT = setTimeout(() => { try { localStorage.setItem('iotforge-autosave', JSON.stringify(snapshotProject())); localStorage.setItem('iotforge-autosave-dirty', app.isDirty ? '1' : ''); } catch (e) { /* storage unavailable */ } }, 600);
+    saveT = setTimeout(writeAutosave, 600);
   };
+  // the open project is kept in the browser so a reload or crash comes back to it
+  function writeAutosave() {
+    clearTimeout(saveT);
+    try { localStorage.setItem('iotforge-autosave', JSON.stringify(snapshotProject())); localStorage.setItem('iotforge-autosave-dirty', app.isDirty ? '1' : ''); } catch (e) { /* storage unavailable */ }
+  }
+  app.writeAutosave = writeAutosave;
   function snapshotProject() {
     const p = ed.project;
     stashActive();
@@ -359,7 +367,8 @@
     });
     $('btnClearSerial').onclick = () => { $('serialOut').textContent = ''; $('loraOut').textContent = ''; };
     $('serialIn').onkeydown = (e) => { if (e.key !== 'Enter') return; const v = e.target.value; e.target.value = ''; sim.serialSend(v + '\n'); const s = document.createElement('span'); s.className = 'sinfo'; s.textContent = '» ' + v + '\n'; $('serialOut').appendChild(s); };
-    $('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) $('modal').hidden = true; });
+    const closeModal = () => { $('modal').hidden = true; if (app.onModalClose) { const f = app.onModalClose; app.onModalClose = null; f(); } };
+    $('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) closeModal(); });
     initSplitters();
     window.addEventListener('resize', () => { blocks.resize(); });
 
@@ -372,11 +381,12 @@
       if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); newProj(); return; }
       if (mod && k === 'enter') { e.preventDefault(); toggleRun(); return; }
       if (typing) return;
+      if (!$('dash').hidden) { if (k === 'escape' && !$('modal').hidden) closeModal(); return; } // the editor is behind the dashboard
       if (mod && k === 'z') { e.preventDefault(); ed.undoStep(e.shiftKey); return; }
       if (mod && k === 'y') { e.preventDefault(); ed.undoStep(true); return; }
       if (k === 'delete' || k === 'backspace') { e.preventDefault(); ed.deleteSel(); return; }
       if (k === 'r' && !mod) { ed.rotateSel(); return; }
-      if (k === 'escape') { ed.cancelArm(); $('modal').hidden = true; }
+      if (k === 'escape') { ed.cancelArm(); closeModal(); }
     });
     window.addEventListener('beforeunload', (e) => { if (app.isDirty && !host) { e.preventDefault(); e.returnValue = ''; } });
 

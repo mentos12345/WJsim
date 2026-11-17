@@ -8,4 +8,13 @@ for (const t of IOTF.TEMPLATES) {
   if (!t.code) continue;
   try { IOTF.transpile(t.code); console.log('ok  ', t.id); } catch (e) { bad++; console.log('FAIL', t.id, 'line', e.line, e.message); }
 }
+// regressions
+const cases = [
+  ['await before member access', 'String f(String a){ return a; }\nvoid setup(){}\nvoid loop(){ float x = f(f("1").substring(0)).toFloat(); }', '(await f((await f("1")).substring(0))).toFloat()'],
+  ['struct init', 'typedef struct { int a; float b; } M;\nM m = {1, 2.5};\nvoid setup(){}\nvoid loop(){}', 'Object.assign(new M(), {a: 1, b: 2.5})'],
+  ['PMS::DATA', '#include <PMS.h>\nPMS pms(Serial2);\nPMS::DATA d;\nvoid setup(){}\nvoid loop(){ pms.read(d); }', 'new PMS_DATA()'],
+];
+for (const [name, src, want] of cases) {
+  try { const js = IOTF.transpile(src).code; if (js.includes(want)) console.log('ok  ', name); else { bad++; console.log('FAIL', name, '\n', js); } } catch (e) { bad++; console.log('FAIL', name, e.message); }
+}
 process.exit(bad ? 1 : 0);
