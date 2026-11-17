@@ -4,9 +4,10 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.0.2';
+  const VERSION = '1.1.0';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
+  app.pageTitle = document.title;
 
   /* ---------- project model ---------- */
   function newProject(mode = 'basic', boardKey = 'esp32') {
@@ -121,7 +122,9 @@
   function updateTitle() {
     const name = ed.project.name || 'ไม่มีชื่อ';
     $('projName').textContent = (app.isDirty ? '● ' : '') + name;
-    document.title = `${app.isDirty ? '● ' : ''}${name} — WJSIM`;
+    // on the web keep the page's own title until the person starts a project of their own
+    if (host || app.isDirty) document.title = `${app.isDirty ? '● ' : ''}${name} — WJSIM`;
+    else document.title = app.pageTitle;
     if (host && host.setTitle) host.setTitle(document.title);
   }
   let saveT = null;
