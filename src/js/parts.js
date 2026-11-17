@@ -1,6 +1,6 @@
 /* WJSIM — parts registry
  * 50 parts come from wokwi-elements (MIT, (c) 2020 Uri Shaked).
- * 7 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay) are original drawings (MIT, WJSIM contributors).
+ * 26 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay and 19 sensors) are original drawings (MIT, WJSIM contributors).
  */
 window.IOTF = window.IOTF || {};
 (function () {
@@ -102,6 +102,216 @@ window.IOTF = window.IOTF || {};
     }
   };
 
+  /* ---------- sensors drawn for WJSIM ---------- */
+  // pins down the right edge of a module, labelled on the board
+  const pwr = (n) => (/^(VCC|VIN|5V|3\.3V|\+)$/.test(n) ? 'VCC' : /^(GND|-)$/.test(n) ? 'GND' : null);
+  const rightPins = (names, x, y0, dy, analog = []) => names.map((n, i) => ({ name: n, x, y: y0 + i * dy, power: pwr(n), analog: analog.includes(n) }));
+  const hdr = (pins, lx, size = 8) => pins.map((p) => `<rect x="${p.x - 2}" y="${p.y - 3}" width="22" height="6" fill="#c9ced4"/>` + pad(p.x, p.y, 3.5) + t(lx, p.y + 3, size, p.name, '#fff', 'end')).join('');
+  const chip = (x, y, w = 30, h = 18) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.5" fill="#1d1d1d"/>` + Array.from({ length: Math.floor(w / 7) }, (_, i) => `<rect x="${x + 3 + i * 7}" y="${y - 3}" width="3" height="3" fill="#bbb"/><rect x="${x + 3 + i * 7}" y="${y + h}" width="3" height="3" fill="#bbb"/>`).join('');
+  const trim = (x, y) => `<rect x="${x - 11}" y="${y - 11}" width="22" height="22" rx="2" fill="#2f6fd6"/><circle cx="${x}" cy="${y}" r="7" fill="#e8ebef"/><path d="M${x - 4} ${y}h8M${x} ${y - 4}v8" stroke="#888" stroke-width="2"/>`;
+  const smd = (x, y, c = '#1d1d1d') => `<rect x="${x}" y="${y}" width="10" height="5" fill="${c}"/><rect x="${x}" y="${y}" width="2" height="5" fill="#ccc"/><rect x="${x + 8}" y="${y}" width="2" height="5" fill="#ccc"/>`;
+  const leds = (x, y) => `<circle class="pled" cx="${x}" cy="${y}" r="3.5" fill="#4a1414"/><circle class="dled" cx="${x}" cy="${y + 12}" r="3.5" fill="#14361f"/>`;
+  const wireEnd = (x, y, col) => `<path d="M${x - 40} ${y}h34" stroke="${col}" stroke-width="5" stroke-linecap="round"/>`;
+
+  Object.assign(CUSTOM, {
+    'iotf-soil': {
+      w: 330, h: 110, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'DO', 'AO'], 318, 25, 20, ['AO']),
+      svg() {
+        let b = '<path d="M8 30h112v16H24v18h96v16H8z" fill="#c9a227" stroke="#8a6d12" stroke-width="1.5"/><rect x="104" y="22" width="40" height="66" rx="4" fill="#1b56a6"/><circle cx="124" cy="36" r="4" fill="#d4b44a"/><circle cx="124" cy="74" r="4" fill="#d4b44a"/>';
+        b += '<path d="M144 40C170 40 170 40 190 40M144 70C170 70 170 70 190 70" stroke="#8a9099" stroke-width="3" fill="none"/>';
+        b += '<rect x="190" y="8" width="140" height="94" rx="6" fill="#1b56a6"/>' + trim(218, 36) + chip(214, 64, 30, 16) + leds(262, 30) + smd(276, 30) + smd(276, 46);
+        b += hdr(this.pins, 306) + t(200, 96, 9, 'SOIL', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-rain': {
+      w: 330, h: 130, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'DO', 'AO'], 318, 35, 20, ['AO']),
+      svg() {
+        let b = '<rect x="4" y="4" width="160" height="122" rx="4" fill="#d8dde3"/><rect x="10" y="10" width="148" height="110" fill="#1d1d1d"/>';
+        for (let i = 0; i < 9; i++) b += `<rect x="${18}" y="${16 + i * 11.5}" width="${i % 2 ? 132 : 120}" height="5" x2="0" fill="#c9a227" transform="translate(${i % 2 ? 0 : 12} 0)"/>`;
+        b += '<rect class="wet" x="10" y="10" width="148" height="110" fill="#6fb6ff" opacity="0"/>';
+        b += '<path d="M164 50C180 50 180 50 190 50M164 80C180 80 180 80 190 80" stroke="#8a9099" stroke-width="3" fill="none"/>';
+        b += '<rect x="190" y="18" width="140" height="94" rx="6" fill="#1b56a6"/>' + trim(218, 46) + chip(214, 74, 30, 16) + leds(262, 40) + smd(276, 40) + smd(276, 56);
+        b += hdr(this.pins, 306) + t(200, 106, 9, 'RAIN', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-waterlevel': {
+      w: 300, h: 76, scale: 0.7,
+      pins: rightPins(['S', '+', '-'], 288, 20, 18, ['S']),
+      svg() {
+        let b = '<rect x="2" y="6" width="292" height="64" rx="6" fill="#c62828"/>';
+        for (let i = 0; i < 10; i++) b += `<rect x="${12 + i * 20}" y="${i % 2 ? 14 : 22}" width="7" height="40" fill="#d4b44a"/>`;
+        b += '<rect class="water" x="2" y="70" width="210" height="0" fill="#4aa3ff" opacity=".55"/>';
+        b += '<circle cx="230" cy="20" r="3.5" fill="#ff4d4d"/>' + smd(222, 44) + hdr(this.pins, 274, 9) + t(236, 64, 7, 'WATER', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-mq135': {
+      w: 230, h: 130, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'DO', 'AO'], 218, 32, 22, ['AO']),
+      svg() {
+        let b = '<rect x="2" y="2" width="226" height="126" rx="8" fill="#1b56a6"/><circle cx="66" cy="65" r="50" fill="#c9ced4" stroke="#8a9099" stroke-width="3"/><circle cx="66" cy="65" r="40" fill="#9aa1aa"/>';
+        for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) if (i * i + j * j <= 10) b += `<circle cx="${66 + i * 10}" cy="${65 + j * 10}" r="2.3" fill="#5f666f"/>`;
+        b += trim(140, 40) + chip(126, 72, 30, 16) + leds(170, 32) + hdr(this.pins, 206) + t(66, 124, 9, 'MQ-135', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-ir-obstacle': {
+      w: 230, h: 86, scale: 0.68,
+      pins: rightPins(['OUT', 'GND', 'VCC'], 218, 22, 21),
+      svg() {
+        let b = '<rect x="38" y="4" width="190" height="78" rx="6" fill="#1b56a6"/>';
+        b += '<rect x="2" y="16" width="44" height="18" rx="9" fill="#e8ebef"/><rect x="2" y="52" width="44" height="18" rx="9" fill="#1d1d1d"/><path d="M44 25h12M44 61h12" stroke="#bbb" stroke-width="3"/>';
+        b += trim(84, 43) + chip(110, 34, 30, 16) + leds(160, 30) + smd(172, 30) + hdr(this.pins, 206) + t(64, 78, 8, 'IR SENSOR', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-line': {
+      w: 220, h: 86, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'DO', 'AO'], 208, 16, 18, ['AO']),
+      svg() {
+        let b = '<rect x="2" y="4" width="216" height="78" rx="6" fill="#1b56a6"/><rect x="12" y="20" width="44" height="46" rx="4" fill="#1d1d1d"/><circle cx="34" cy="32" r="8" fill="#3a6ad9"/><circle cx="34" cy="54" r="8" fill="#0f0f0f" stroke="#444"/>';
+        b += trim(84, 43) + chip(106, 34, 30, 16) + leds(152, 28) + hdr(this.pins, 196) + t(64, 78, 8, 'TCRT5000', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-touch': {
+      w: 140, h: 110, scale: 0.68,
+      pins: rightPins(['SIG', 'VCC', 'GND'], 128, 34, 22),
+      svg() {
+        let b = '<rect x="2" y="2" width="136" height="106" rx="8" fill="#c62828"/><circle cx="52" cy="55" r="38" fill="#e8ebef" stroke="#d4b44a" stroke-width="4"/><circle class="pad" cx="52" cy="55" r="30" fill="#f6d36b" opacity=".0"/>';
+        b += t(52, 60, 10, 'TOUCH', '#888', 'middle', 'bold') + '<circle class="dled" cx="100" cy="14" r="3.5" fill="#4a1414"/>' + hdr(this.pins, 116, 7);
+        return b;
+      }
+    },
+    'iotf-reed': {
+      w: 190, h: 80, scale: 0.7,
+      pins: rightPins(['S', '+', '-'], 178, 20, 20),
+      svg() {
+        let b = '<rect x="2" y="4" width="186" height="72" rx="6" fill="#2b3a4a" stroke="#4d6278" stroke-width="2"/><rect x="14" y="30" width="110" height="20" rx="10" fill="#cfe8f5" opacity=".75" stroke="#9fc4d8"/><path d="M4 40h22M26 40l40 -2M120 40h20M72 38l40 2" stroke="#9aa1aa" stroke-width="3"/>';
+        b += '<rect class="mag" x="40" y="54" width="60" height="14" rx="2" fill="#d32f2f" opacity="0"/>' + smd(132, 20) + '<circle class="dled" cx="140" cy="58" r="3.5" fill="#14361f"/>' + hdr(this.pins, 166) + t(18, 20, 8, 'REED KY-021', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-sw420': {
+      w: 220, h: 86, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'DO'], 208, 22, 21),
+      svg() {
+        let b = '<rect x="2" y="4" width="216" height="78" rx="6" fill="#1b56a6"/><rect x="12" y="26" width="52" height="34" rx="16" fill="#c9ced4" stroke="#8a9099" stroke-width="2"/><rect class="shake" x="20" y="34" width="36" height="18" rx="9" fill="#9aa1aa"/>';
+        b += trim(90, 43) + chip(114, 34, 30, 16) + leds(160, 30) + hdr(this.pins, 196) + t(14, 78, 8, 'SW-420', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-dht11': {
+      w: 150, h: 150, scale: 0.62,
+      pins: rightPins(['VCC', 'DATA', 'GND'], 138, 102, 18),
+      svg() {
+        let b = '<rect x="2" y="84" width="146" height="64" rx="6" fill="#1b56a6"/><rect x="18" y="4" width="84" height="104" rx="6" fill="#2d7fd6"/>';
+        for (let r = 0; r < 6; r++) for (let c = 0; c < 4; c++) b += `<rect x="${28 + c * 18}" y="${14 + r * 14}" width="10" height="8" rx="1.5" fill="#174a8a"/>`;
+        b += smd(30, 124) + '<circle class="pled" cx="80" cy="128" r="3.5" fill="#4a1414"/>' + hdr(this.pins, 126, 7) + t(60, 146, 8, 'DHT11', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-ds18b20': {
+      w: 320, h: 80, scale: 0.7,
+      pins: [['VCC', 20, '#d32f2f'], ['DATA', 40, '#f5c518'], ['GND', 60, '#222']].map(([n, y]) => ({ name: n, x: 312, y, power: pwr(n), col: '' })),
+      svg() {
+        let b = '<defs><linearGradient id="ss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f4"/><stop offset=".5" stop-color="#a9b0b8"/><stop offset="1" stop-color="#e2e6ea"/></linearGradient></defs>';
+        b += '<rect x="4" y="28" width="96" height="24" rx="12" fill="url(#ss)"/><rect x="96" y="31" width="20" height="18" fill="#2b2b2b"/><path d="M116 40C170 40 200 40 230 40" stroke="#6b7078" stroke-width="11" fill="none"/><path d="M116 40C170 40 200 40 230 40" stroke="#3d4046" stroke-width="8" fill="none"/>';
+        [['#d32f2f', 20], ['#f5c518', 40], ['#222', 60]].forEach(([c, y]) => { b += `<path d="M230 40C260 40 270 ${y} 304 ${y}" stroke="${c === '#222' ? '#555' : c}" stroke-width="5" fill="none"/><path d="M230 40C260 40 270 ${y} 304 ${y}" stroke="${c}" stroke-width="3.5" fill="none"/>`; });
+        this.pins.forEach((p) => { b += `<rect x="${p.x - 8}" y="${p.y - 3}" width="12" height="6" fill="#d4b44a"/>` + t(p.x - 14, p.y - 5, 7, p.name, '#ddd', 'end'); });
+        b += t(52, 70, 9, 'DS18B20', '#aaa', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-bme280': {
+      w: 150, h: 120, scale: 0.62,
+      pins: rightPins(['VCC', 'GND', 'SCL', 'SDA'], 138, 24, 22),
+      svg() {
+        let b = '<rect x="2" y="2" width="146" height="116" rx="8" fill="#6a2c91"/><circle cx="18" cy="18" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/><circle cx="18" cy="102" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/>';
+        b += '<rect x="44" y="44" width="28" height="28" rx="2" fill="#c9ced4" stroke="#8a9099"/><circle cx="50" cy="50" r="2" fill="#555"/>' + smd(36, 86) + smd(56, 86) + hdr(this.pins, 116, 7) + t(58, 112, 9, 'BME280', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-bmp280': {
+      w: 150, h: 120, scale: 0.62,
+      pins: rightPins(['VCC', 'GND', 'SCL', 'SDA'], 138, 24, 22),
+      svg() {
+        let b = '<rect x="2" y="2" width="146" height="116" rx="8" fill="#1b56a6"/><circle cx="18" cy="18" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/><circle cx="18" cy="102" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/>';
+        b += '<rect x="46" y="46" width="24" height="24" rx="2" fill="#c9ced4" stroke="#8a9099"/><circle cx="64" cy="64" r="2.5" fill="#555"/>' + smd(36, 86) + smd(56, 86) + hdr(this.pins, 116, 7) + t(58, 112, 9, 'BMP280', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-bh1750': {
+      w: 160, h: 130, scale: 0.62,
+      pins: rightPins(['VCC', 'GND', 'SCL', 'SDA', 'ADDR'], 148, 20, 22),
+      svg() {
+        let b = '<rect x="2" y="2" width="156" height="126" rx="8" fill="#1b56a6"/><circle cx="20" cy="20" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/><circle cx="20" cy="110" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/>';
+        b += '<rect x="44" y="48" width="34" height="22" rx="2" fill="#1d1d1d"/><rect x="54" y="54" width="14" height="10" fill="#6b5a2a"/>' + smd(44, 86) + smd(62, 86) + hdr(this.pins, 126, 7) + t(62, 120, 9, 'BH1750', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-pms5003': {
+      w: 270, h: 200, scale: 0.6,
+      pins: rightPins(['VCC', 'GND', 'TX', 'RX', 'SET', 'RESET'], 258, 40, 22),
+      svg() {
+        let b = '<rect x="4" y="4" width="200" height="192" rx="8" fill="#c9ced4" stroke="#8a9099" stroke-width="2"/><rect x="14" y="14" width="180" height="172" rx="4" fill="#dfe3e8"/>';
+        b += '<circle cx="104" cy="96" r="52" fill="#9aa1aa"/><circle cx="104" cy="96" r="42" fill="#3a3d42"/>';
+        for (let i = 0; i < 7; i++) b += `<path d="M104 96L${104 + 40 * Math.cos(i * 0.9)} ${96 + 40 * Math.sin(i * 0.9)}" stroke="#8a9099" stroke-width="7" stroke-linecap="round"/>`;
+        b += '<circle cx="104" cy="96" r="10" fill="#c9ced4"/><rect x="204" y="28" width="22" height="144" rx="2" fill="#2b2b2b"/>' + t(104, 176, 12, 'PMS5003', '#555', 'middle', 'bold');
+        this.pins.forEach((p) => { b += `<path d="M226 ${p.y}h28" stroke="#888" stroke-width="3"/>` + pad(p.x, p.y, 3.5) + t(p.x - 8, p.y - 5, 7, p.name, '#ddd', 'end'); });
+        return b;
+      }
+    },
+    'iotf-acs712': {
+      w: 210, h: 100, scale: 0.68,
+      pins: rightPins(['VCC', 'OUT', 'GND'], 198, 28, 22, ['OUT']),
+      svg() {
+        let b = '<rect x="2" y="4" width="206" height="92" rx="6" fill="#c62828"/><rect x="8" y="16" width="44" height="68" rx="3" fill="#2f6fd6"/><circle cx="30" cy="34" r="9" fill="#c9ced4"/><circle cx="30" cy="66" r="9" fill="#c9ced4"/><path d="M24 34h12M24 66h12" stroke="#666" stroke-width="2"/>';
+        b += chip(76, 40, 28, 18) + '<circle class="pled" cx="140" cy="20" r="3.5" fill="#4a1414"/>' + smd(130, 70) + hdr(this.pins, 176, 7) + t(90, 90, 9, 'ACS712 5A', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-pzem004t': {
+      w: 290, h: 180, scale: 0.6,
+      pins: rightPins(['5V', 'RX', 'TX', 'GND'], 278, 56, 24),
+      svg() {
+        let b = '<rect x="2" y="2" width="286" height="176" rx="8" fill="#e9ecef" stroke="#adb5bd" stroke-width="2"/><rect x="12" y="12" width="64" height="156" rx="4" fill="#1f7a3d"/>';
+        for (let i = 0; i < 4; i++) b += `<rect x="20" y="${22 + i * 37}" width="48" height="28" rx="2" fill="#2f9a4a"/><circle cx="44" cy="${36 + i * 37}" r="8" fill="#c9ced4"/>`;
+        b += '<rect x="96" y="30" width="110" height="70" rx="3" fill="#1d1d1d"/><circle cx="150" cy="134" r="22" fill="#2b2b2b"/><circle cx="150" cy="134" r="12" fill="#c9a227"/>' + t(151, 70, 11, 'PZEM-004T', '#fff', 'middle', 'bold') + t(151, 86, 8, 'AC 80-260V 100A', '#aaa');
+        b += '<rect x="224" y="40" width="62" height="106" rx="3" fill="#1d1d1d"/>' + this.pins.map((p) => pad(p.x, p.y, 3.5) + t(p.x - 10, p.y + 3, 8, p.name, '#fff', 'end')).join('');
+        return b;
+      }
+    },
+    'iotf-yfs201': {
+      w: 290, h: 150, scale: 0.6,
+      pins: [['VCC', 36], ['OUT', 56], ['GND', 76]].map(([n, y]) => ({ name: n, x: 282, y, power: pwr(n) })),
+      svg() {
+        let b = '<rect x="4" y="56" width="40" height="44" rx="4" fill="#44474e" stroke="#6b7078"/><rect x="164" y="56" width="40" height="44" rx="4" fill="#44474e" stroke="#6b7078"/>';
+        for (let i = 0; i < 5; i++) b += `<path d="M${8 + i * 7} 56v44M${168 + i * 7} 56v44" stroke="#444" stroke-width="2"/>`;
+        b += '<rect x="40" y="46" width="128" height="64" rx="8" fill="#33363c" stroke="#5b6068" stroke-width="2"/><circle cx="104" cy="78" r="40" fill="#2a2c31" stroke="#6b7078" stroke-width="3"/><g class="rotor" transform="rotate(0 104 78)">';
+        for (let i = 0; i < 6; i++) b += `<path d="M104 78L${104 + 30 * Math.cos(i * Math.PI / 3)} ${78 + 30 * Math.sin(i * Math.PI / 3)}" stroke="#d4b44a" stroke-width="6" stroke-linecap="round"/>`;
+        b += '</g><circle cx="104" cy="78" r="7" fill="#999"/><path d="M60 118h88" stroke="#666" stroke-width="2"/><path d="M140 112l10 6-10 6" fill="#666"/>' + t(104, 140, 9, 'YF-S201', '#aaa', 'middle', 'bold');
+        b += '<path d="M150 46C150 20 200 30 230 40" stroke="#6b7078" stroke-width="11" fill="none"/><path d="M150 46C150 20 200 30 230 40" stroke="#3d4046" stroke-width="8" fill="none"/>';
+        [['#d32f2f', 36], ['#f5c518', 56], ['#222', 76]].forEach(([c, y]) => { b += `<path d="M228 40C250 40 255 ${y} 276 ${y}" stroke="${c === '#222' ? '#555' : c}" stroke-width="5" fill="none"/><path d="M228 40C250 40 255 ${y} 276 ${y}" stroke="${c}" stroke-width="3.5" fill="none"/>`; });
+        this.pins.forEach((p) => { b += `<rect x="${p.x - 8}" y="${p.y - 3}" width="12" height="6" fill="#d4b44a"/>` + t(p.x - 12, p.y - 5, 7, p.name, '#ddd', 'end'); });
+        return b;
+      }
+    },
+    'iotf-max30102': {
+      w: 150, h: 130, scale: 0.62,
+      pins: rightPins(['VIN', 'SCL', 'SDA', 'INT', 'GND'], 138, 20, 22),
+      svg() {
+        let b = '<rect x="2" y="2" width="146" height="126" rx="8" fill="#6a2c91"/><circle cx="18" cy="18" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/><circle cx="18" cy="112" r="7" fill="#1a1a1a" stroke="#d4b44a" stroke-width="2"/>';
+        b += '<rect x="42" y="46" width="34" height="22" rx="3" fill="#1d1d1d"/><rect x="47" y="51" width="10" height="12" fill="#3a0d0d"/><rect class="beat" x="61" y="51" width="10" height="12" fill="#3a0d0d"/>' + smd(40, 84) + smd(60, 84) + hdr(this.pins, 116, 7) + t(58, 122, 8, 'MAX30102', '#fff', 'middle', 'bold');
+        return b;
+      }
+    }
+  });
+
   class IotfPart extends HTMLElement {
     connectedCallback() {
       if (this._init) return;
@@ -189,7 +399,7 @@ window.IOTF = window.IOTF || {};
   /* ---------- parts ----------
    * kind: behaviour id used by runtime/editor
    * level: 'basic' parts are shown in Basic mode (all parts are shown in Advanced)
-   * sig: signal pins and what they need when auto-wired in Basic mode
+   * sig: the main signal pins and what kind of board pin they need
    * tie: pins that Basic mode treats as already tied to GND/VCC
    * sim: user-adjustable simulated values (shown in the properties panel)
    */
@@ -230,6 +440,26 @@ window.IOTF = window.IOTF || {};
   def('mpu6050', { name: 'MPU6050 Gyro/Accel', cat: 'เซ็นเซอร์', kind: 'mpu', sig: [['SDA', 'sda'], ['SCL', 'scl']], sim: { ax: [0, -20, 20, 0.1, 'm/s²'], ay: [0, -20, 20, 0.1, 'm/s²'], az: [9.8, -20, 20, 0.1, 'm/s²'], gx: [0, -250, 250, 1, '°/s'], gy: [0, -250, 250, 1, '°/s'], gz: [0, -250, 250, 1, '°/s'], temp: [26, -40, 85, 0.5, '°C'] } });
   def('iotf-ph', { tag: 'iotf-ph', name: 'pH Sensor', cat: 'เซ็นเซอร์', kind: 'ph', level: 'basic', sig: [['Po', 'analog']], sim: { ph: [7, 0, 14, 0.1, 'pH'] } });
   def('iotf-tds', { tag: 'iotf-tds', name: 'TDS Sensor', cat: 'เซ็นเซอร์', kind: 'tds', level: 'basic', sig: [['A', 'analog']], sim: { ppm: [300, 0, 1000, 5, 'ppm'] } });
+  const sen = (key, o) => def(key, Object.assign({ tag: key, cat: 'เซ็นเซอร์', level: 'basic' }, o));
+  sen('iotf-dht11', { name: 'DHT11 อุณหภูมิ/ความชื้น', kind: 'dht', alias: { SDA: 'DATA' }, dhtType: 11, sim: { temp: [28, 0, 50, 1, '°C'], hum: [65, 20, 90, 1, '%'] } });
+  sen('iotf-ds18b20', { name: 'DS18B20 อุณหภูมิกันน้ำ', kind: 'ds18b20', sim: { temp: [25, -55, 125, 0.5, '°C'] } });
+  sen('iotf-soil', { name: 'เซ็นเซอร์ความชื้นในดิน', kind: 'analogmod', analogPin: 'AO', digitalPin: 'DO', invert: true, optional: ['DO'], sim: { level: [40, 0, 100, 1, '% ชื้น'] } });
+  sen('iotf-rain', { name: 'เซ็นเซอร์น้ำฝน', kind: 'analogmod', analogPin: 'AO', digitalPin: 'DO', invert: true, optional: ['DO'], sim: { level: [0, 0, 100, 1, '% เปียก'] } });
+  sen('iotf-waterlevel', { name: 'เซ็นเซอร์ระดับน้ำ', kind: 'analogmod', analogPin: 'S', sim: { level: [30, 0, 100, 1, '% ระดับน้ำ'] } });
+  sen('iotf-mq135', { name: 'MQ-135 คุณภาพอากาศ', kind: 'analogmod', analogPin: 'AO', digitalPin: 'DO', optional: ['DO'], sim: { level: [15, 0, 100, 1, '% มลพิษ'] } });
+  sen('iotf-ir-obstacle', { name: 'IR หลบสิ่งกีดขวาง', kind: 'dsensor', outPin: 'OUT', activeLow: true, sim: { detect: [0, 0, 1, 1, 'เจอวัตถุ'] } });
+  sen('iotf-line', { name: 'TCRT5000 เดินตามเส้น', kind: 'line', optional: ['AO'], sim: { black: [0, 0, 1, 1, 'อยู่บนเส้นดำ'] } });
+  sen('iotf-touch', { name: 'Touch TTP223', kind: 'dsensor', outPin: 'SIG', touch: true, sim: { detect: [0, 0, 1, 1, 'ถูกแตะ'] } });
+  sen('iotf-reed', { name: 'Reed Switch แม่เหล็ก', kind: 'dsensor', outPin: 'S', activeLow: true, sim: { detect: [0, 0, 1, 1, 'มีแม่เหล็ก'] } });
+  sen('iotf-sw420', { name: 'SW-420 ตรวจจับการสั่น', kind: 'dsensor', outPin: 'DO', sim: { detect: [0, 0, 1, 1, 'สั่น'] } });
+  sen('iotf-bme280', { name: 'BME280 อุณหภูมิ/ความชื้น/ความกด', kind: 'bme', sim: { temp: [28, -40, 85, 0.1, '°C'], hum: [60, 0, 100, 0.5, '%'], pressure: [1013.25, 300, 1100, 0.25, 'hPa'] } });
+  sen('iotf-bmp280', { name: 'BMP280 ความกดอากาศ', kind: 'bme', noHum: true, sim: { temp: [28, -40, 85, 0.1, '°C'], pressure: [1013.25, 300, 1100, 0.25, 'hPa'] } });
+  sen('iotf-bh1750', { name: 'BH1750 ความสว่าง (lux)', kind: 'bh1750', optional: ['ADDR'], sim: { lux: [300, 0, 65535, 10, 'lux'] } });
+  sen('iotf-pms5003', { name: 'PMS5003 ฝุ่น PM2.5', kind: 'pms', optional: ['RX', 'SET', 'RESET'], sim: { pm1: [10, 0, 500, 1, 'µg/m³ PM1.0'], pm25: [25, 0, 500, 1, 'µg/m³ PM2.5'], pm10: [40, 0, 500, 1, 'µg/m³ PM10'] } });
+  sen('iotf-acs712', { name: 'ACS712 วัดกระแส', kind: 'acs712', sim: { current: [1.5, -5, 5, 0.05, 'A'] } });
+  sen('iotf-pzem004t', { name: 'PZEM-004T วัดไฟฟ้า', kind: 'pzem', level: 'advanced', sim: { voltage: [220, 80, 260, 0.5, 'V'], current: [1.2, 0, 100, 0.1, 'A'], pf: [0.95, 0, 1, 0.01, 'PF'], freq: [50, 45, 65, 0.1, 'Hz'] } });
+  sen('iotf-yfs201', { name: 'YF-S201 วัดการไหลของน้ำ', kind: 'flow', sim: { flow: [5, 0, 30, 0.5, 'L/min'] } });
+  sen('iotf-max30102', { name: 'MAX30102 ชีพจร/ออกซิเจน', kind: 'oximeter', optional: ['INT'], sim: { bpm: [75, 40, 180, 1, 'bpm'], spo2: [97, 80, 100, 1, '% SpO2'], finger: [1, 0, 1, 1, 'วางนิ้ว'] } });
   def('iotf-loadcell', { tag: 'iotf-loadcell', name: 'Load Cell', cat: 'เซ็นเซอร์', kind: 'loadcell', sim: { weight: [0, 0, 5000, 10, 'g'] } });
 
   // input

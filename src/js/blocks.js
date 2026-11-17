@@ -47,13 +47,24 @@
     this.setInputsInline(true); val(this, COL.time, 'Number');
   });
   // sensors
-  def('iotf_dht', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['อุณหภูมิ (°C)', 'T'], ['ความชื้น (%)', 'H']]), 'WHAT').appendField('จาก DHT22 ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_dht', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['อุณหภูมิ (°C)', 'T'], ['ความชื้น (%)', 'H']]), 'WHAT').appendField('จาก').appendField(new BL.FieldDropdown([['DHT22', 'DHT22'], ['DHT11', 'DHT11']]), 'TYPE').appendField('ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_ultrasonic', function () { this.appendDummyInput().appendField('ระยะทาง (cm) HC-SR04 TRIG').appendField(pinField(), 'T').appendField('ECHO').appendField(pinField(), 'E'); val(this, COL.sensor, 'Number'); });
   def('iotf_pir', function () { this.appendDummyInput().appendField('PIR ขา').appendField(pinField(), 'PIN').appendField('ตรวจพบการเคลื่อนไหว'); val(this, COL.sensor, 'Boolean'); });
   def('iotf_light', function () { this.appendDummyInput().appendField('ระดับแสง (%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_pot', function () { this.appendDummyInput().appendField('ค่า Potentiometer (0-100) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
-  def('iotf_gas', function () { this.appendDummyInput().appendField('ระดับแก๊ส/เปลวไฟ/เสียง (%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_gas', function () { this.appendDummyInput().appendField('ระดับแก๊ส/MQ-135/เปลวไฟ/เสียง (%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_ntc', function () { this.appendDummyInput().appendField('อุณหภูมิ NTC (°C) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_moisture', function () { this.appendDummyInput().appendField(new BL.FieldDropdown([['ความชื้นในดิน', 'SOIL'], ['ความเปียกน้ำฝน', 'RAIN']]), 'WHAT').appendField('(%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_waterlevel', function () { this.appendDummyInput().appendField('ระดับน้ำ (%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_dsensor', function () { this.appendDummyInput().appendField('เซ็นเซอร์').appendField(new BL.FieldDropdown([['IR เจอสิ่งกีดขวาง', 'IR'], ['เส้นดำ (TCRT5000)', 'LINE'], ['ถูกแตะ (Touch)', 'TOUCH'], ['เจอแม่เหล็ก (Reed)', 'REED'], ['สั่น (SW-420)', 'VIB']]), 'WHAT').appendField('ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Boolean'); });
+  def('iotf_ds18b20', function () { this.appendDummyInput().appendField('อุณหภูมิ DS18B20 (°C) ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_bme', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['อุณหภูมิ (°C)', 'T'], ['ความชื้น (%)', 'H'], ['ความกดอากาศ (hPa)', 'P'], ['ความสูง (m)', 'A']]), 'WHAT').appendField('จาก').appendField(new BL.FieldDropdown([['BME280', 'BME280'], ['BMP280', 'BMP280']]), 'CHIP'); val(this, COL.sensor, 'Number'); });
+  def('iotf_bh1750', function () { this.appendDummyInput().appendField('ความสว่าง (lux) BH1750'); val(this, COL.sensor, 'Number'); });
+  def('iotf_pms', function () { this.appendDummyInput().appendField('ฝุ่น').appendField(new BL.FieldDropdown([['PM2.5', '25'], ['PM10', '10'], ['PM1.0', '1']]), 'WHAT').appendField('(µg/m³) PMS5003 RX ขา').appendField(pinField(), 'RX').appendField('TX ขา').appendField(pinField(), 'TX'); val(this, COL.sensor, 'Number'); this.setFieldValue && this.setFieldValue(isEsp() ? '16' : '2', 'RX'); this.setFieldValue && this.setFieldValue(isEsp() ? '17' : '3', 'TX'); });
+  def('iotf_acs712', function () { this.appendDummyInput().appendField('กระแสไฟ (A) ACS712 ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_pzem', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['แรงดัน (V)', 'voltage'], ['กระแส (A)', 'current'], ['กำลังไฟ (W)', 'power'], ['พลังงาน (kWh)', 'energy'], ['ความถี่ (Hz)', 'frequency'], ['Power Factor', 'pf']]), 'WHAT').appendField('PZEM-004T RX ขา').appendField(pinField(), 'RX').appendField('TX ขา').appendField(pinField(), 'TX'); val(this, COL.sensor, 'Number'); this.setFieldValue && this.setFieldValue(isEsp() ? '16' : '2', 'RX'); this.setFieldValue && this.setFieldValue(isEsp() ? '17' : '3', 'TX'); });
+  def('iotf_flow', function () { this.appendDummyInput().appendField('อัตราการไหล (L/min) ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
+  def('iotf_max30102', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['ชีพจร (bpm)', 'HR'], ['ออกซิเจนในเลือด SpO2 (%)', 'SPO2']]), 'WHAT').appendField('MAX30102'); val(this, COL.sensor, 'Number'); });
   def('iotf_ph', function () { this.appendDummyInput().appendField('ค่า pH ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_tds', function () { this.appendDummyInput().appendField('ค่า TDS (ppm) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   // outputs
@@ -178,7 +189,7 @@
   F.iotf_serial_print = (b) => { serial(); return `Serial.${b.getFieldValue('NL') === 'TRUE' ? 'println' : 'print'}(${v(b, 'VALUE', O.NONE, '""')});\n`; };
   F.iotf_map = (b) => [`map(${v(b, 'V')}, ${b.getFieldValue('A')}, ${b.getFieldValue('B')}, ${b.getFieldValue('C')}, ${b.getFieldValue('D')})`, O.ATOMIC];
   F.iotf_dht = (b) => {
-    const p = b.getFieldValue('PIN'); G.inc.add('DHT.h'); G.glob.set('dht' + p, `DHT dht${p}(${p}, DHT22);`); G.setups.set('dht' + p, `dht${p}.begin();`);
+    const p = b.getFieldValue('PIN'); G.inc.add('DHT.h'); G.glob.set('dht' + p, `DHT dht${p}(${p}, ${b.getFieldValue('TYPE') || 'DHT22'});`); G.setups.set('dht' + p, `dht${p}.begin();`);
     return [`dht${p}.${b.getFieldValue('WHAT') === 'T' ? 'readTemperature' : 'readHumidity'}()`, O.ATOMIC];
   };
   F.iotf_ultrasonic = (b) => {
@@ -193,6 +204,61 @@
   F.iotf_ntc = (b) => {
     G.helpers.set('ntc', `float iotfNtc(int pin) {\n  const float BETA = 3950;\n  int a = analogRead(pin);\n  return 1 / (log(1 / (${adcMax()}.0 / a - 1)) / BETA + 1.0 / 298.15) - 273.15;\n}`);
     return [`iotfNtc(${b.getFieldValue('PIN')})`, O.ATOMIC];
+  };
+  F.iotf_moisture = (b) => [`map(analogRead(${b.getFieldValue('PIN')}), 0, ${adcMax()}, 100, 0)`, O.ATOMIC];
+  F.iotf_waterlevel = (b) => [`map(analogRead(${b.getFieldValue('PIN')}), 0, ${adcMax()}, 0, 100)`, O.ATOMIC];
+  F.iotf_dsensor = (b) => {
+    const p = b.getFieldValue('PIN'), w = b.getFieldValue('WHAT'), low = w === 'IR' || w === 'REED';
+    pm(p, w === 'REED' ? 'INPUT_PULLUP' : 'INPUT');
+    return [`(digitalRead(${p}) == ${low ? 'LOW' : 'HIGH'})`, O.ATOMIC];
+  };
+  F.iotf_ds18b20 = (b) => {
+    const p = b.getFieldValue('PIN'); G.inc.add('OneWire.h'); G.inc.add('DallasTemperature.h');
+    G.glob.set('ow' + p, `OneWire oneWire${p}(${p});\nDallasTemperature ds${p}(&oneWire${p});`); G.setups.set('ds' + p, `ds${p}.begin();`);
+    G.helpers.set('ds' + p, `float iotfDs18b20_${p}() {\n  ds${p}.requestTemperatures();\n  return ds${p}.getTempCByIndex(0);\n}`);
+    return [`iotfDs18b20_${p}()`, O.ATOMIC];
+  };
+  F.iotf_bme = (b) => {
+    const chip = b.getFieldValue('CHIP'), w = b.getFieldValue('WHAT'), v = chip === 'BME280' ? 'bme' : 'bmp';
+    G.inc.add('Wire.h'); G.inc.add('Adafruit_Sensor.h'); G.inc.add(`Adafruit_${chip}.h`); G.glob.set(v, `Adafruit_${chip} ${v};`);
+    G.setups.set(v, `if (!${v}.begin(0x76)) Serial.println("ไม่พบ ${chip}");`); serial();
+    return [{ T: `${v}.readTemperature()`, H: `${v}.readHumidity()`, P: `(${v}.readPressure() / 100.0)`, A: `${v}.readAltitude(1013.25)` }[w], O.ATOMIC];
+  };
+  F.iotf_bh1750 = () => { G.inc.add('Wire.h'); G.inc.add('BH1750.h'); G.glob.set('bh', 'BH1750 lightMeter;'); G.setups.set('wire', 'Wire.begin();'); G.setups.set('bh', 'lightMeter.begin();'); return ['lightMeter.readLightLevel()', O.ATOMIC]; };
+  const uart = (b, name) => {
+    const rx = b.getFieldValue('RX'), tx = b.getFieldValue('TX');
+    if (isEsp()) return { port: 'Serial2', begin: (baud) => `Serial2.begin(${baud}, SERIAL_8N1, ${rx}, ${tx});` };
+    G.inc.add('SoftwareSerial.h'); G.glob.set('ss' + name, `SoftwareSerial ${name}Serial(${rx}, ${tx});`);
+    return { port: name + 'Serial', begin: (baud) => `${name}Serial.begin(${baud});` };
+  };
+  F.iotf_pms = (b) => {
+    const u = uart(b, 'pms'); G.inc.add('PMS.h'); G.glob.set('pms', `PMS pms(${u.port});\nPMS::DATA pmsData;`); G.setups.set('pms', u.begin(9600));
+    G.helpers.set('pms', 'float iotfPm(int which) {\n  pms.read(pmsData);\n  if (which == 1) return pmsData.PM_AE_UG_1_0;\n  if (which == 10) return pmsData.PM_AE_UG_10_0;\n  return pmsData.PM_AE_UG_2_5;\n}');
+    return [`iotfPm(${b.getFieldValue('WHAT')})`, O.ATOMIC];
+  };
+  F.iotf_acs712 = (b) => {
+    G.helpers.set('acs', `float iotfCurrent(int pin) {\n  float v = analogRead(pin) * ${vref().toFixed(1)} / ${adcMax()}.0;\n  return (v - ${(vref() / 2).toFixed(2)}) / 0.185;\n}`);
+    return [`iotfCurrent(${b.getFieldValue('PIN')})`, O.ATOMIC];
+  };
+  F.iotf_pzem = (b) => {
+    G.inc.add('PZEM004Tv30.h');
+    if (isEsp()) G.glob.set('pzem', `PZEM004Tv30 pzem(Serial2, ${b.getFieldValue('RX')}, ${b.getFieldValue('TX')});`);
+    else G.glob.set('pzem', `PZEM004Tv30 pzem(${b.getFieldValue('RX')}, ${b.getFieldValue('TX')});`);
+    return [`pzem.${b.getFieldValue('WHAT')}()`, O.ATOMIC];
+  };
+  F.iotf_flow = (b) => {
+    const p = b.getFieldValue('PIN');
+    G.glob.set('flow' + p, `volatile unsigned long flowPulses${p} = 0;`);
+    G.helpers.set('flowisr' + p, `void ${isEsp() ? 'IRAM_ATTR ' : ''}flowISR${p}() {\n  flowPulses${p}++;\n}`);
+    G.helpers.set('flow' + p, `float iotfFlow${p}() {\n  static unsigned long last = 0;\n  static float rate = 0;\n  unsigned long now = millis();\n  if (now - last >= 1000) {\n    noInterrupts();\n    unsigned long n = flowPulses${p};\n    flowPulses${p} = 0;\n    interrupts();\n    rate = n / 7.5 * 1000.0 / (now - last);\n    last = now;\n  }\n  return rate;\n}`);
+    G.setups.set('flow' + p, `pinMode(${p}, INPUT_PULLUP);\n  attachInterrupt(digitalPinToInterrupt(${p}), flowISR${p}, RISING);`);
+    return [`iotfFlow${p}()`, O.ATOMIC];
+  };
+  F.iotf_max30102 = (b) => {
+    G.inc.add('Wire.h'); G.inc.add('MAX30100_PulseOximeter.h'); G.glob.set('pox', 'PulseOximeter pox;'); serial();
+    G.setups.set('pox', 'if (!pox.begin()) Serial.println("ไม่พบ MAX30102");');
+    G.helpers.set('pox', 'float iotfPox(bool spo2) {\n  pox.update();\n  return spo2 ? pox.getSpO2() : pox.getHeartRate();\n}');
+    return [`iotfPox(${b.getFieldValue('WHAT') === 'SPO2' ? 'true' : 'false'})`, O.ATOMIC];
   };
   F.iotf_ph = (b) => [`(analogRead(${b.getFieldValue('PIN')}) * ${vref().toFixed(1)} / ${adcMax()}.0 * 3.5)`, O.ATOMIC];
   F.iotf_tds = (b) => {
@@ -281,7 +347,8 @@
   const num = (n) => ({ shadow: { type: 'math_number', fields: { NUM: n } } });
   const txt = (t) => ({ shadow: { type: 'text', fields: { TEXT: t } } });
   function toolbox(basic) {
-    const sensors = [B('iotf_dht'), B('iotf_ultrasonic'), B('iotf_pir'), B('iotf_light'), B('iotf_pot'), B('iotf_gas'), B('iotf_ntc'), B('iotf_ph'), B('iotf_tds'), B('iotf_button')];
+    const sensors = [B('iotf_dht'), B('iotf_ds18b20'), B('iotf_bme'), B('iotf_ultrasonic'), B('iotf_pir'), B('iotf_dsensor'), B('iotf_light'), B('iotf_bh1750'), B('iotf_moisture'), B('iotf_waterlevel'), B('iotf_gas'), B('iotf_pms'),
+      B('iotf_pot'), B('iotf_ntc'), B('iotf_ph'), B('iotf_tds'), B('iotf_flow'), B('iotf_acs712'), B('iotf_pzem'), B('iotf_max30102'), B('iotf_button')];
     return {
       kind: 'categoryToolbox',
       contents: [

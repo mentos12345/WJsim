@@ -73,7 +73,6 @@
     Object.entries(d.sim).forEach(([k, v]) => { p.sim[k] = opts.sim && k in opts.sim ? opts.sim[k] : v[0]; });
     ed.project.parts.push(p);
     mountPart(p);
-    if (ed.isBasic() && !opts.noAutoWire && d.kind !== 'board') autoWire(p);
     if (d.kind === 'board') { ed.project.activeBoard = p.id; markActive(); refreshBoardLabels(); if (!opts.silent) changed('board-added'); }
     if (!opts.silent) { select(p.id); renderWires(); changed(); }
     return p;
@@ -473,6 +472,7 @@
     });
     svg.innerHTML = h + handles;
     markUsedPins();
+    showSelectionNets();
   }
   ed.renderWires = renderWires;
   function rebuild() {
@@ -567,7 +567,7 @@
 
   function hint(msg) {
     $('stageHint').textContent = msg || (ed.running ? 'กำลังจำลอง: กดปุ่ม/หมุนลูกบิดบนชิ้นส่วนได้ คลิกชิ้นส่วนเพื่อปรับค่าเซ็นเซอร์' :
-      ed.isBasic() ? 'Basic: ลากอุปกรณ์จากด้านซ้าย ระบบต่อสายสัญญาณให้อัตโนมัติ ไฟเลี้ยง/กราวด์ต่อให้ในตัว · คลิกขาเพื่อต่อสายเอง' :
+      ed.isBasic() ? 'Basic: ลากอุปกรณ์จากด้านซ้าย แล้วคลิกขาอุปกรณ์ต่อกับขาบอร์ดเอง (ไฟเลี้ยง/กราวด์ต่อให้ในตัว) · คลิกอุปกรณ์เพื่อดูว่าต่อกับขาไหน' :
         'Advanced: คลิกขาหนึ่งแล้วคลิกอีกขาเพื่อต่อสาย ต้องต่อไฟเลี้ยงและกราวด์เอง · R หมุน · Delete ลบ · Ctrl+Z ย้อน');
   }
   ed.hint = hint;
@@ -660,11 +660,46 @@
     }
     return best;
   }
+  // clicking a part lights up every wire it is connected to and labels the pins at the other end
+  function showSelectionNets() {
+    const svg = $('wires'); if (!svg) return;
+    svg.querySelectorAll('.wire.hl').forEach((x) => x.classList.remove('hl'));
+    const old = svg.querySelector('.selpins'); if (old) old.remove();
+    const p = ed.sel && ed.part(ed.sel);
+    if (!p || !ed.els[p.id]) { svg.classList.remove('dim'); return; }
+    const nets = ed.nets(), info = ed.els[p.id].el.pinInfo || [];
+    // follow signal nets end to end; for VCC/GND only the wires that touch this part (they reach everything)
+    const mine = new Set(info.map((q) => nets.netOf(p.id, q.name)).filter((n) => !nets.hasVcc(n) && !nets.hasGnd(n)));
+    const wires = ed.project.wires.filter((w) => w.a.p === p.id || w.b.p === p.id || mine.has(nets.netOf(w.a.p, w.a.pin)));
+    svg.classList.toggle('dim', wires.length > 0);
+    if (!wires.length) return;
+    wires.forEach((w) => { const el = svg.querySelector(`.wire[data-wl="${w.id}"]`); if (el) el.classList.add('hl'); });
+    const isB = ed.isBoard(p), seen = new Set(), tags = [];
+    let g = '';
+    wires.forEach((w) => [w.a, w.b].forEach((e) => {
+      const k = e.p + '|' + e.pin; if (seen.has(k)) return; seen.add(k);
+      const q = ed.pinPos(e.p, e.pin); if (!q) return;
+      const own = e.p === p.id;
+      g += `<circle class="selring ${own ? 'own' : ''}" cx="${q.x}" cy="${q.y}" r="5"/>`;
+      const other = ed.part(e.p);
+      if (!isB && ed.isBoard(other)) { // name the board pin each wire lands on
+        const label = e.pin;
+        const wdt = label.length * 5.6 + 10, n = ed.els[other.id];
+        const left = n && q.x < other.x + ((other.rot || 0) % 180 ? n.h : n.w) / 2; // tag on the outer side of the board
+        let x = left ? q.x - 8 - wdt : q.x + 8, y = q.y - 7;
+        const hit = (yy) => tags.some((r) => Math.abs(r.x - x) < wdt && Math.abs(r.y - yy) < 15);
+        y = [0, -15, 15, -30, 30, -45, 45].map((d) => y + d).find((yy) => !hit(yy)) ?? y;
+        tags.push({ x, y });
+        g += `<g class="seltag" transform="translate(${x} ${y})"><rect width="${wdt}" height="14" rx="4"/><text x="5" y="10.5">${label.replace(/[&<>]/g, '')}</text></g>`;
+      }
+    }));
+    svg.insertAdjacentHTML('beforeend', `<g class="selpins">${g}</g>`);
+  }
   function highlightNet(wid) {
     const svg = $('wires');
+    if (!wid) { showSelectionNets(); return; }
     svg.querySelectorAll('.wire.hl').forEach((x) => x.classList.remove('hl'));
     svg.classList.toggle('dim', !!wid);
-    if (!wid) return;
     const w = ed.project.wires.find((x) => x.id === wid); if (!w) return;
     const nets = ed.nets(), n = nets.netOf(w.a.p, w.a.pin);
     ed.project.wires.forEach((x) => { if (nets.netOf(x.a.p, x.a.pin) === n) { const el = svg.querySelector(`.wire[data-wl="${x.id}"]`); if (el) el.classList.add('hl'); } });
@@ -785,7 +820,7 @@
     box.hidden = false;
     let h = `<h3>${d.name}</h3><div class="muted small">${d.cat}${d.level === 'basic' ? '' : ' · Advanced'}</div>`;
     Object.entries(d.sim).forEach(([k, [, min, max, step, unit]]) => {
-      if (max === 1 && step === 1 && min === 0) h += `<div class="row"><label>${simLabel(k)}</label><input type="checkbox" data-sim="${k}" ${p.sim[k] ? 'checked' : ''}></div>`;
+      if (max === 1 && step === 1 && min === 0) h += `<div class="row"><label>${unit || simLabel(k)}</label><input type="checkbox" data-sim="${k}" ${p.sim[k] ? 'checked' : ''}></div>`;
       else h += `<div class="row"><label>${simLabel(k)}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${p.sim[k]}" data-sim="${k}"><output>${fmt(p.sim[k], step)} ${unit}</output></div>`;
     });
     if (d.opts) Object.entries(d.opts).forEach(([k, list]) => {
@@ -830,7 +865,7 @@
   ed.renderProps = renderProps;
   const fmt = (v, step) => (+v).toFixed(step < 1 ? (String(step).split('.')[1] || '').length : 0);
   function simLabel(k) {
-    return { temp: 'อุณหภูมิ', hum: 'ความชื้น', distance: 'ระยะทาง', motion: 'มีการเคลื่อนไหว', level: 'ระดับ', bpm: 'ชีพจร', tilted: 'เอียง', ph: 'ค่า pH', ppm: 'TDS', weight: 'น้ำหนัก', lat: 'ละติจูด', lng: 'ลองจิจูด', sats: 'ดาวเทียม', ax: 'Accel X', ay: 'Accel Y', az: 'Accel Z', gx: 'Gyro X', gy: 'Gyro Y', gz: 'Gyro Z' }[k] || k;
+    return { temp: 'อุณหภูมิ', hum: 'ความชื้น', distance: 'ระยะทาง', motion: 'มีการเคลื่อนไหว', level: 'ระดับ', bpm: 'ชีพจร', tilted: 'เอียง', ph: 'ค่า pH', ppm: 'TDS', weight: 'น้ำหนัก', lat: 'ละติจูด', lng: 'ลองจิจูด', sats: 'ดาวเทียม', ax: 'Accel X', ay: 'Accel Y', az: 'Accel Z', gx: 'Gyro X', gy: 'Gyro Y', gz: 'Gyro Z', pressure: 'ความกดอากาศ', lux: 'ความสว่าง', pm1: 'PM1.0', pm25: 'PM2.5', pm10: 'PM10', current: 'กระแส', voltage: 'แรงดัน', pf: 'Power Factor', freq: 'ความถี่', flow: 'อัตราการไหล', spo2: 'SpO2', finger: 'วางนิ้ว', black: 'เส้นดำ', detect: 'ตรวจพบ' }[k] || k;
   }
 
   /* ---------- palette ---------- */

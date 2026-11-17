@@ -54,7 +54,7 @@
     const list = partsOfKind(kinds);
     if (gpio !== undefined && gpio !== null) {
       const n = gpioNetOf(dev, gpio);
-      const hit = list.find((p) => n && netOf(p, pin) === n);
+      const hit = list.find((p) => n && netOf(p, (P[p.type].alias || {})[pin] || pin) === n);
       if (hit) return hit;
       if (!ed.isBasic()) return null;
     }
@@ -97,6 +97,9 @@
       case 'ultrasonic': return pin === 'ECHO' ? 0 : undefined;
       case 'irrecv': return pin === 'DAT' ? 1 : undefined;
       case 'heartbeat': return pin === 'OUT' ? (heartWave(s.bpm) > 0.5 ? 1 : 0) : undefined;
+      case 'dsensor': { if (pin !== d.outPin) return undefined; const on = s.detect || st(p).pressed ? 1 : 0; return d.activeLow ? 1 - on : on; }
+      case 'line': return pin === 'DO' ? (s.black ? 1 : 0) : undefined;
+      case 'flow': { if (pin !== 'OUT') return undefined; const f = 7.5 * s.flow; return f > 0 ? Math.floor(performance.now() / 1000 * f * 2) % 2 : 1; }
     }
     return undefined;
   }
@@ -146,6 +149,8 @@
         case 'heartbeat': if (pin === 'OUT') return V * (0.3 + 0.5 * heartWave(s.bpm)); break;
         case 'ph': if (pin === 'Po') return Math.min(V, s.ph / 3.5); break;
         case 'tds': if (pin === 'A') return Math.min(V, tdsVoltage(s.ppm)); break;
+        case 'line': if (pin === 'AO') return V * (s.black ? 0.85 : 0.08); break;
+        case 'acs712': if (pin === 'OUT') return clamp(V / 2 + 0.185 * s.current, 0, V); break;
       }
     }
     const lv = netLevel(net);
@@ -168,12 +173,30 @@
     return pin;
   }
 
+  // power/trigger LEDs and small effects on the drawn sensors
+  function customLook(p, d, e, on) {
+    const set = (sel, attr, v) => { const x = e.q(sel); if (x && x.getAttribute(attr) !== String(v)) x.setAttribute(attr, v); };
+    const s = p.sim;
+    set('.pled', 'fill', on ? '#ff3b30' : '#4a1414');
+    let trig = false;
+    if (d.kind === 'analogmod') trig = s.level > 50;
+    else if (d.kind === 'dsensor') trig = !!(s.detect || st(p).pressed);
+    else if (d.kind === 'line') trig = !s.black;
+    set('.dled', 'fill', on && trig ? '#3cff6e' : '#14361f');
+    set('.pad', 'opacity', on && trig ? 0.85 : 0);
+    set('.mag', 'opacity', s.detect ? 1 : 0);
+    set('.wet', 'opacity', p.type === 'iotf-rain' ? (s.level / 100 * 0.6).toFixed(2) : 0);
+    if (p.type === 'iotf-waterlevel') { const h = (s.level / 100 * 62).toFixed(1); set('.water', 'y', (70 - h).toFixed(1)); set('.water', 'height', h); }
+    if (p.type === 'iotf-sw420') set('.shake', 'x', on && s.detect ? 20 + Math.round(Math.sin(performance.now() / 25) * 3) : 20);
+  }
+
   /* ---------- outputs → parts ---------- */
   function refresh() {
     if (!sim.running) return;
     ed.project.parts.forEach((p) => {
       const d = P[p.type], e = el(p); if (!e) return;
       const on = powered(p);
+      if (e.q && d.tag.startsWith('iotf-')) customLook(p, d, e, on);
       switch (d.kind) {
         case 'board': {
           const dv = sim.devByBoard[p.id]; if (!dv) break;
@@ -215,6 +238,8 @@
         case 'gps': { const c = e.q && e.q('.fix'); if (c) c.setAttribute('fill', on && p.sim.sats >= 3 && (performance.now() % 1000) < 120 ? '#ff3b30' : '#5a1a17'); break; }
         case 'loadcell': { const t = e.q && e.q('.kg'); if (t) t.textContent = p.sim.weight + ' g'; break; }
         case 'hx711': { const lc = partsOfKind(['loadcell'])[0]; if (lc) p.sim.weight = lc.sim.weight; break; }
+        case 'flow': { const r = e.q && e.q('.rotor'); if (r) { const a = ((st(p).rot || 0) + (on ? p.sim.flow * 1.2 : 0)) % 360; st(p).rot = a; r.setAttribute('transform', `rotate(${a} 104 78)`); } break; }
+        case 'oximeter': { const r = e.q && e.q('.beat'); if (r) r.setAttribute('fill', on && p.sim.finger && heartWave(p.sim.bpm) > 0.5 ? '#ff3b30' : '#3a0d0d'); break; }
       }
     });
   }
@@ -511,8 +536,8 @@
       begin() { }
       _p() { const p = findPart(['dht'], 'SDA', this.pin); return p && powered(p) ? p : null; }
       read() { return !!this._p(); }
-      readTemperature(f) { const p = this._p(); if (!p) return NaN; const t = Math.round(p.sim.temp * 10) / 10; return f ? t * 9 / 5 + 32 : t; }
-      readHumidity() { const p = this._p(); return p ? Math.round(p.sim.hum * 10) / 10 : NaN; }
+      readTemperature(f) { const p = this._p(); if (!p) return NaN; const r = P[p.type].dhtType === 11 ? 1 : 10; const t = Math.round(p.sim.temp * r) / r; return f ? t * 9 / 5 + 32 : t; }
+      readHumidity() { const p = this._p(); if (!p) return NaN; const r = P[p.type].dhtType === 11 ? 1 : 10; return Math.round(p.sim.hum * r) / r; }
       convertCtoF(c) { return c * 9 / 5 + 32; } convertFtoC(f) { return (f - 32) * 5 / 9; }
       computeHeatIndex(t, h, isF = true) {
         let T = isF ? t : t * 9 / 5 + 32;
@@ -521,6 +546,88 @@
         return isF ? hi : (hi - 32) * 5 / 9;
       }
     };
+
+    // --- DS18B20 (OneWire + DallasTemperature)
+    env.OneWire = class { constructor(pin) { this.pin = toGpio(pin); } reset() { return 1; } };
+    env.DallasTemperature = class {
+      constructor(ow) { this.ow = ow; }
+      _p() { const p = findPart(['ds18b20'], 'DATA', this.ow && this.ow.pin); return p && powered(p) ? p : null; }
+      begin() { } setResolution() { } setWaitForConversion() { } requestTemperatures() { return true; } requestTemperaturesByIndex() { return true; }
+      getDeviceCount() { return this._p() ? 1 : 0; } getDS18Count() { return this.getDeviceCount(); }
+      getTempCByIndex(i = 0) { const p = this._p(); return p && i === 0 ? Math.round(p.sim.temp * 16) / 16 : -127; }
+      getTempFByIndex(i = 0) { const c = this.getTempCByIndex(i); return c === -127 ? -196.6 : c * 9 / 5 + 32; }
+      getTempC() { return this.getTempCByIndex(0); } getTempF() { return this.getTempFByIndex(0); }
+      getAddress(a) { return !!this._p(); }
+    };
+    env.DEVICE_DISCONNECTED_C = -127;
+
+    // --- BME280 / BMP280 (I2C)
+    class BMEx {
+      constructor(humid) { this.humid = humid; this.p = null; }
+      begin() { this.p = mine(['bme']).find((q) => this.humid ? !P[q.type].noHum : true) || mine(['bme'])[0] || null; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); }
+      _ok() { return this.p && powered(this.p); }
+      readTemperature() { return this._ok() ? Math.round(this.p.sim.temp * 100) / 100 : NaN; }
+      readPressure() { return this._ok() ? this.p.sim.pressure * 100 : NaN; }
+      readHumidity() { return this._ok() && !P[this.p.type].noHum ? Math.round(this.p.sim.hum * 100) / 100 : NaN; }
+      readAltitude(sea = 1013.25) { if (!this._ok()) return NaN; return 44330 * (1 - Math.pow(this.p.sim.pressure / sea, 0.1903)); }
+      setSampling() { } takeForcedMeasurement() { return true; } sensorID() { return this.humid ? 0x60 : 0x58; }
+    }
+    env.Adafruit_BME280 = class extends BMEx { constructor() { super(true); } };
+    env.Adafruit_BMP280 = class extends BMEx { constructor() { super(false); } };
+
+    // --- BH1750 light meter (I2C)
+    env.BH1750 = class {
+      begin() { this.p = mine(['bh1750'])[0] || null; return !!(this.p && busOk(this.p, ['SDA', 'SCL'])); }
+      configure() { return true; } setMTreg() { return true; } measurementReady() { return true; }
+      readLightLevel() { const p = this.p || mine(['bh1750'])[0]; return p && powered(p) ? Math.round(p.sim.lux * 10) / 10 : -2; }
+    };
+    env.BH1750.CONTINUOUS_HIGH_RES_MODE = 0x10; env.BH1750.ONE_TIME_HIGH_RES_MODE = 0x20;
+
+    // --- PMS5003 dust sensor (UART)
+    env.PMS_DATA = class { constructor() { this.PM_SP_UG_1_0 = 0; this.PM_SP_UG_2_5 = 0; this.PM_SP_UG_10_0 = 0; this.PM_AE_UG_1_0 = 0; this.PM_AE_UG_2_5 = 0; this.PM_AE_UG_10_0 = 0; } };
+    env.PMS = class {
+      constructor(serial) { this.serial = serial; this.last = 0; }
+      _p() { const p = mine(['pms'])[0]; return p && powered(p) && busOk(p, ['TX']) ? p : null; }
+      _fill(d) { const p = this._p(); if (!p || !d) return false; const j = (v) => Math.max(0, Math.round(v + (Math.random() - 0.5) * 2)); d.PM_AE_UG_1_0 = d.PM_SP_UG_1_0 = j(p.sim.pm1); d.PM_AE_UG_2_5 = d.PM_SP_UG_2_5 = j(p.sim.pm25); d.PM_AE_UG_10_0 = d.PM_SP_UG_10_0 = j(p.sim.pm10); return true; }
+      read(d) { const t = performance.now(); if (t - this.last < 1000) return false; if (!this._fill(d)) return false; this.last = t; return true; }
+      async readUntil(d, timeout = 1000) { const w = Math.max(0, 1000 - (performance.now() - this.last)); if (w > timeout) { await sleep(timeout); return false; } await sleep(w); return this.read(d); }
+      activeMode() { } passiveMode() { } wakeUp() { } sleep() { } requestRead() { }
+    };
+
+    // --- PZEM-004T v3 energy meter (UART)
+    env.PZEM004Tv30 = class {
+      constructor() { this.kwh = 0; this.t = performance.now(); }
+      _p() { const p = mine(['pzem'])[0]; return p && powered(p) && busOk(p, ['TX', 'RX']) ? p : null; }
+      _acc(p) { const t = performance.now(); this.kwh += p.sim.voltage * p.sim.current * p.sim.pf * (t - this.t) / 3.6e9; this.t = t; }
+      voltage() { const p = this._p(); return p ? Math.round(p.sim.voltage * 10) / 10 : NaN; }
+      current() { const p = this._p(); return p ? Math.round(p.sim.current * 1000) / 1000 : NaN; }
+      power() { const p = this._p(); return p ? Math.round(p.sim.voltage * p.sim.current * p.sim.pf * 10) / 10 : NaN; }
+      energy() { const p = this._p(); if (!p) return NaN; this._acc(p); return Math.round(this.kwh * 1000) / 1000; }
+      frequency() { const p = this._p(); return p ? Math.round(p.sim.freq * 10) / 10 : NaN; }
+      pf() { const p = this._p(); return p ? Math.round(p.sim.pf * 100) / 100 : NaN; }
+      resetEnergy() { this.kwh = 0; return true; } setAddress() { return true; } readAddress() { return 0xf8; }
+    };
+
+    // --- MAX30100/MAX30102 pulse oximeter
+    env.PulseOximeter = class {
+      constructor() { this.cb = null; this.next = 0; }
+      _p() { const p = mine(['oximeter'])[0]; return p && powered(p) && busOk(p, ['SDA', 'SCL']) ? p : null; }
+      begin() { return !!this._p(); }
+      update() { const p = this._p(); if (!p || !p.sim.finger || !this.cb) return; const t = performance.now(); if (t >= this.next) { this.next = t + 60000 / p.sim.bpm; safeCall(this.cb); } }
+      getHeartRate() { const p = this._p(); return p && p.sim.finger ? p.sim.bpm + (Math.random() - 0.5) * 2 : 0; }
+      getSpO2() { const p = this._p(); return p && p.sim.finger ? Math.round(p.sim.spo2) : 0; }
+      setOnBeatDetectedCallback(cb) { this.cb = cb; } setIRLedCurrent() { } shutdown() { } resume() { }
+    };
+    env.MAX30105 = class {
+      _p() { const p = mine(['oximeter'])[0]; return p && powered(p) ? p : null; }
+      begin() { return !!(this._p() && busOk(this._p(), ['SDA', 'SCL'])); } setup() { } setPulseAmplitudeRed() { } setPulseAmplitudeGreen() { } check() { return 1; } available() { return 1; } nextSample() { }
+      getIR() { const p = this._p(); return p && p.sim.finger ? Math.round(80000 + 3000 * heartWave(p.sim.bpm)) : 2000; }
+      getRed() { const p = this._p(); return p && p.sim.finger ? Math.round(60000 + 2000 * heartWave(p.sim.bpm)) : 1500; }
+      getFIFOIR() { return this.getIR(); } getFIFORed() { return this.getRed(); } readTemperature() { return 31.5; }
+    };
+    let beatLast = 0;
+    env.checkForBeat = () => { const p = mine(['oximeter'])[0]; if (!p || !p.sim.finger) return false; const t = performance.now(); if (t - beatLast >= 60000 / p.sim.bpm) { beatLast = t; return true; } return false; };
+    env.I2C_SPEED_FAST = 400000; env.I2C_SPEED_STANDARD = 100000;
 
     // --- Servo
     env.Servo = class {
@@ -966,6 +1073,7 @@
       const d = P[p.type], e = el(p); if (!e) return;
       const on = (ev, fn) => { e.addEventListener(ev, fn); sim.listeners.push(() => e.removeEventListener(ev, fn)); };
       if (d.kind === 'button') { on('button-press', () => { st(p).pressed = true; }); on('button-release', () => { st(p).pressed = false; }); }
+      if (d.touch) on('pointerdown', () => { st(p).pressed = true; const up = () => { st(p).pressed = false; window.removeEventListener('pointerup', up); }; window.addEventListener('pointerup', up); });
       if (d.kind === 'keypad') on('button-press', (ev) => { st(p).key = ev.detail && ev.detail.key; });
       if (d.kind === 'irremote') on('button-press', (ev) => { if (ev.detail && ev.detail.irCode !== undefined) sim.irPush(ev.detail.irCode); });
       if (d.kind === 'encoder') {
@@ -1176,8 +1284,20 @@
       while (sim.running && gen === sim.gen) { await prog.loop(); if (performance.now() - last > 8) { await sleep(0); last = performance.now(); } }
     } catch (e) { if (e !== STOP && gen === sim.gen) onError(e, dev); }
   }
+  function flowOn(dev, gpio) {
+    const n = gpioNetOf(dev, gpio); if (n == null) return null;
+    const m = members(n).find((x) => P[x.part.type].kind === 'flow' && x.pin === 'OUT');
+    return m && powered(m.part) ? m.part : null;
+  }
   function refreshInts() {
+    const now = performance.now() / 1000;
     sim.devices.forEach((dev) => dev.ints.forEach((it) => {
+      const fp = flowOn(dev, it.gpio);
+      if (fp) { // count whole pulses since the last poll (they can be faster than the poll)
+        const f = 7.5 * fp.sim.flow, c = Math.floor(now * f);
+        if (it.flowC !== undefined && c > it.flowC) { const k = Math.min(c - it.flowC, 500) * (it.mode === 1 ? 2 : 1); for (let i = 0; i < k; i++) safeCallDev(it.fn, dev); }
+        it.flowC = c; it.last = undefined; return;
+      }
       const lv = readPinDev(dev, it.gpio);
       if (it.last !== undefined && lv !== it.last) { const rising = lv === 1; if (it.mode === 1 || (it.mode === 3 && rising) || (it.mode === 2 && !rising)) safeCallDev(it.fn, dev); }
       it.last = lv;

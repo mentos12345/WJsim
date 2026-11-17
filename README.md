@@ -5,18 +5,18 @@
 
 | | **Basic** | **Advanced** |
 |---|---|---|
-| อุปกรณ์ | 30 ชิ้นที่ต่อง่าย | ทั้งหมด 57 ชิ้น + บอร์ด 6 รุ่น |
-| การต่อสาย | ลากลงมาแล้วต่อสายสัญญาณให้อัตโนมัติ ไฟเลี้ยง/กราวด์ต่อให้ในตัว | ต่อเองทุกเส้น ต้องต่อไฟเลี้ยง กราวด์ ตัวต้านทาน |
+| อุปกรณ์ | 48 ชิ้นที่ต่อง่าย | ทั้งหมด 76 ชิ้น + บอร์ด 6 รุ่น |
+| การต่อสาย | ต่อสายสัญญาณเอง ไฟเลี้ยง/กราวด์ต่อให้ในตัว | ต่อเองทุกเส้น ต้องต่อไฟเลี้ยง กราวด์ ตัวต้านทาน |
 | เขียนโปรแกรม | Block ภาษาไทย (สร้างโค้ด C++ ให้ดูข้าง ๆ) | C++ แบบ Arduino |
 | ตรวจวงจร | เตือนเฉพาะขาที่ยังไม่ได้ต่อ | เตือนไฟลัดวงจร ไม่ได้ต่อไฟเลี้ยง LED ไม่มีตัวต้านทาน ใช้ขาอินพุตอย่างเดียวผิด ฯลฯ |
 
 ## ฟีเจอร์
 
-- **อุปกรณ์ 57 ชิ้น**: บอร์ด (ESP32, Uno, Nano, Mega, Nano RP2040 Connect, ATtiny85), เซ็นเซอร์ (DHT22, HC-SR04, PIR, LDR, MQ-2, เปลวไฟ, เสียง, NTC, ชีพจร, Tilt, MPU6050, pH, TDS, Load Cell), จอ (LCD 16×2/20×4, OLED, TFT, 7-segment), ไฟ/เสียง (LED, RGB, NeoPixel วงแหวน/เมทริกซ์, Bar graph, Buzzer), อินพุต (ปุ่ม, สวิตช์, Potentiometer, Joystick, Keypad, Encoder, DIP, รีโมท IR, Dialer), มอเตอร์ (Servo, Stepper), โมดูล (Relay 1/4 ช่อง, HX711, RFID RC522, GPS NEO-6M, LoRa SX1278, RTC, microSD, IR Receiver)
+- **อุปกรณ์ 76 ชิ้น**: บอร์ด (ESP32, Uno, Nano, Mega, Nano RP2040 Connect, ATtiny85), เซ็นเซอร์ (DHT22, DHT11, DS18B20, BME280, BMP280, BH1750, HC-SR04, PIR, LDR, MQ-2, MQ-135, เปลวไฟ, เสียง, NTC, ชีพจร, MAX30102, Tilt, MPU6050, ความชื้นในดิน, น้ำฝน, ระดับน้ำ, IR หลบสิ่งกีดขวาง, TCRT5000, Touch TTP223, Reed switch, SW-420, PMS5003 PM2.5, ACS712, PZEM-004T, YF-S201, pH, TDS, Load Cell), จอ (LCD 16×2/20×4, OLED, TFT, 7-segment), ไฟ/เสียง (LED, RGB, NeoPixel วงแหวน/เมทริกซ์, Bar graph, Buzzer), อินพุต (ปุ่ม, สวิตช์, Potentiometer, Joystick, Keypad, Encoder, DIP, รีโมท IR, Dialer), มอเตอร์ (Servo, Stepper), โมดูล (Relay 1/4 ช่อง, HX711, RFID RC522, GPS NEO-6M, LoRa SX1278, RTC, microSD, IR Receiver)
 - **IoT ครบในแอป**: WiFi จำลอง, MQTT broker ในตัว, Dashboard (เกจ กราฟ สวิตช์ ปุ่ม แถบเลื่อน ไฟสถานะ ช่องส่งข้อความ), LoRa และ **หลายหน้าต่างคุยกันได้** (ไฟล์ → หน้าต่างใหม่) เพื่อจำลองหลายบอร์ด
 - **หลายบอร์ดในวงจรเดียว**: ลากบอร์ดเพิ่มลงผัง แต่ละบอร์ดมีโค้ดของตัวเอง (MAC 24:0A:C4:00:00:0N, IP 192.168.1.10N) ส่งข้อมูลหากันผ่าน ESP-NOW (มีบล็อก "บอร์ดคุยกัน"), WiFiUDP, WebServer/HTTPClient, MQTT และ LoRa พร้อมแอนิเมชันแพ็กเก็ตบนผัง
 - **ไลบรารีที่รองรับในโค้ด C++**: WiFi, PubSubClient, DHT, Servo/ESP32Servo, LiquidCrystal_I2C, Adafruit SSD1306 / ILI9341 / NeoPixel / MPU6050, HX711, MFRC522, TinyGPSPlus, LoRa, RTClib, SD, Keypad, Stepper, IRremote, attachInterrupt, tone, ledc (ESP32), Serial รับ-ส่ง
-- Serial Monitor (พิมพ์ส่งเข้าได้), แท็บ LoRa, ไฟล์ใน SD card, ตัวอย่าง 13 โปรเจกต์, Undo/Redo, บันทึกเป็นไฟล์ `.iotf`, ส่งออกโค้ด `.ino` ไปใช้กับ Arduino IDE, บันทึกอัตโนมัติ
+- Serial Monitor (พิมพ์ส่งเข้าได้), แท็บ LoRa, ไฟล์ใน SD card, ตัวอย่าง 17 โปรเจกต์, Undo/Redo, บันทึกเป็นไฟล์ `.iotf`, ส่งออกโค้ด `.ino` ไปใช้กับ Arduino IDE, บันทึกอัตโนมัติ
 
 ## เริ่มใช้งานจากซอร์สโค้ด
 
@@ -61,7 +61,7 @@ git push origin v1.0.0
 electron/main.js      หน้าต่าง เมนู เปิด/บันทึกไฟล์ และส่งข้อความระหว่างหน้าต่าง
 electron/preload.js   สะพานเชื่อมระหว่างหน้าแอปกับระบบ (หน้าแอปเข้าถึง Node ไม่ได้)
 src/index.html        หน้าจอหลัก
-src/js/parts.js       รายการอุปกรณ์ บอร์ด และภาพที่วาดเอง 7 ชิ้น
+src/js/parts.js       รายการอุปกรณ์ บอร์ด และภาพที่วาดเอง 26 ชิ้น
 src/js/editor.js      พื้นที่ต่อวงจร สายไฟ การตรวจวงจร แผงคุณสมบัติ
 src/js/transpile.js   แปลง C++ แบบ Arduino ให้รันในตัวจำลอง
 src/js/runtime.js     ตัวจำลอง: คำสั่ง Arduino และไลบรารีทั้งหมด
@@ -74,7 +74,7 @@ src/vendor/           ไลบรารีภายนอก (สร้าง�
 ## เพิ่มอุปกรณ์ใหม่
 
 1. เพิ่มบรรทัด `def('ชื่อ', {...})` ใน `src/js/parts.js` (ถ้าวาดเอง ให้เพิ่มใน `CUSTOM` พร้อมตำแหน่งขา)
-2. ใส่ `level: 'basic'` ถ้าต่อได้ง่ายพอสำหรับโหมด Basic และกำหนด `sig` (ขาสัญญาณที่จะต่อให้อัตโนมัติ)
+2. ใส่ `level: 'basic'` ถ้าต่อได้ง่ายพอสำหรับโหมด Basic และกำหนด `sig` (ขาสัญญาณหลักของชิ้นนั้น)
 3. เขียนพฤติกรรมใน `runtime.js` (ถ้าเป็นเซ็นเซอร์อนาล็อก/ดิจิทัลทั่วไป ใช้ `kind` ที่มีอยู่แล้วได้เลย)
 
 ## ข้อจำกัด
@@ -85,7 +85,7 @@ src/vendor/           ไลบรารีภายนอก (สร้าง�
 
 ## เครดิต
 
-ดู `CREDITS.md` — ภาพอุปกรณ์ 50 ชิ้นจาก wokwi-elements (MIT), 7 ชิ้นวาดขึ้นใหม่ (MIT), Blockly (Apache 2.0), CodeMirror (MIT), Electron (MIT)
+ดู `CREDITS.md` — ภาพอุปกรณ์ 50 ชิ้นจาก wokwi-elements (MIT), 26 ชิ้นวาดขึ้นใหม่ (MIT), Blockly (Apache 2.0), CodeMirror (MIT), Electron (MIT)
 
 ## สัญญาอนุญาต
 

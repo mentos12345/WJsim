@@ -176,3 +176,10 @@ li.CodeMirror-hint-active{background:#3b2a16;color:#fff}
 .ac-const{background:#15301f;color:#6fdc8c}.ac-snip{background:#e87d0d;color:#1b1c20}.ac-field{background:#262a33;color:#9fb3c8}.ac-inc{background:#2d2a14;color:#e8d26a}
 .ac-name{flex:1}.ac-detail{color:#7c8088;margin-left:14px;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;max-width:22em}
 li.CodeMirror-hint-active .ac-detail{color:#c9b39a}
+
+/* selected part: its wires and the pins at both ends */
+#wires .selring{fill:none;stroke:#ffd166;stroke-width:2;pointer-events:none}
+#wires .selring.own{stroke:#fff}
+#wires .seltag{pointer-events:none}
+#wires .seltag rect{fill:#ffd166;stroke:#1b1c20;stroke-width:1}
+#wires .seltag text{font:700 9.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#1b1c20}
