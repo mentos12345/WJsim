@@ -56,10 +56,11 @@ function buildMenu() {
       submenu: [
         { label: 'โปรเจกต์ใหม่', accelerator: 'CmdOrCtrl+N', click: () => send('new') },
         { label: 'หน้าต่างใหม่', accelerator: 'CmdOrCtrl+Shift+N', click: () => createWindow() },
-        { label: 'เปิด…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
+        { label: 'เปิดไฟล์…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
         { type: 'separator' },
+        { label: 'โปรเจกต์ของฉัน', accelerator: 'CmdOrCtrl+Shift+P', click: () => send('projects') },
         { label: 'บันทึก', accelerator: 'CmdOrCtrl+S', click: () => send('save') },
-        { label: 'บันทึกเป็น…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('saveAs') },
+        { label: 'บันทึกเป็นไฟล์ .iotf…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('saveAs') },
         { label: 'ส่งออกโค้ด .ino…', accelerator: 'CmdOrCtrl+E', click: () => send('export') },
         { type: 'separator' },
         { label: 'ตัวอย่างโปรเจกต์…', click: () => send('examples') },

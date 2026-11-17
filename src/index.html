@@ -24,9 +24,9 @@
 <header id="topbar">
   <div class="brand"><svg class="dot" viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#1b1c20"/><path d="M10.5 18 L19.5 49 L31 26 L42.5 49 L46 35" fill="none" stroke="#e87d0d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10.5" cy="18" r="4.2" fill="#e87d0d"/><circle cx="10.5" cy="18" r="1.7" fill="#1b1c20"/><circle cx="46" cy="35" r="4.2" fill="#e87d0d"/><circle cx="46" cy="35" r="1.7" fill="#1b1c20"/><path d="M46 26.5a8.5 8.5 0 0 1 8.5 8.5" fill="none" stroke="#ececec" stroke-width="3" stroke-linecap="round"/><path d="M46 20a15 15 0 0 1 15 15" fill="none" stroke="#ececec" stroke-width="3" stroke-linecap="round" opacity=".5"/></svg>WJSIM</div>
   <div class="menu">
+    <button class="tb" id="btnDash" title="รายการโปรเจกต์ที่บันทึกไว้">โปรเจกต์ของฉัน</button>
     <button class="tb" id="btnNew" title="โปรเจกต์ใหม่ (Ctrl+N)">ใหม่</button>
-    <button class="tb" id="btnOpen" title="เปิดไฟล์ (Ctrl+O)">เปิด</button>
-    <button class="tb" id="btnSave" title="บันทึก (Ctrl+S)">บันทึก</button>
+    <button class="tb" id="btnOpen" title="เปิดไฟล์ .iotf (Ctrl+O)">เปิดไฟล์</button>
     <button class="tb" id="btnExamples">ตัวอย่าง</button>
     <button class="tb" id="btnExport" title="ส่งออกโค้ดไปใช้กับ Arduino IDE">ส่งออก .ino</button>
   </div>
@@ -37,6 +37,7 @@
   <label class="boardSel">บอร์ด <select id="boardSelect"></select></label>
   <div class="spacer"></div>
   <span id="projName" class="muted"></span>
+  <button class="savebtn" id="btnSave" title="บันทึกลงโปรเจกต์ของฉัน (Ctrl+S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 3v6h8V3M7 21v-7h10v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span id="saveLabel">บันทึก</span></button>
   <button class="run" id="btnRun">▶ เริ่มจำลอง</button>
   <button class="tb" id="btnAbout" title="เกี่ยวกับและเครดิต">?</button>
 </header>
@@ -126,6 +127,32 @@
   <div class="bpane" id="bpane-files" hidden><pre id="sdOut"></pre></div>
 </footer>
 
+<section id="dash" hidden aria-label="โปรเจกต์ของฉัน">
+  <header class="dhead">
+    <div class="brand"><img src="favicon.svg" width="24" height="24" alt="">WJSIM</div>
+    <div class="dtitle"><h1>โปรเจกต์ของฉัน</h1><span id="dashCount" class="muted"></span></div>
+    <div class="spacer"></div>
+    <button class="btn" id="dashBack" hidden>กลับไปที่โปรเจกต์</button>
+    <button class="tb dclose" id="dashClose" title="ปิด (Esc)" aria-label="ปิด">✕</button>
+  </header>
+  <div class="dwrap">
+    <div class="dnew">
+      <button class="dnewcard" id="dashNewBasic"><b>+ โปรเจกต์ใหม่ Basic</b><span>ต่อง่าย เขียนด้วย Block ภาษาไทย</span></button>
+      <button class="dnewcard adv" id="dashNewAdv"><b>+ โปรเจกต์ใหม่ Advanced</b><span>ต่อวงจรเองครบ เขียน C++</span></button>
+      <label class="dboard">บอร์ดเริ่มต้น <select id="dashBoard"></select></label>
+      <div class="dside"><button class="btn" id="dashExamples">เปิดตัวอย่าง</button><button class="btn" id="dashImport">เปิดไฟล์ .iotf</button></div>
+    </div>
+    <div class="dbar">
+      <h2>บันทึกไว้</h2>
+      <div class="spacer"></div>
+      <input id="dashSearch" type="search" placeholder="ค้นหาชื่อโปรเจกต์หรือบอร์ด…">
+      <select id="dashSort"><option value="recent">แก้ไขล่าสุด</option><option value="name">ชื่อ ก–ฮ</option></select>
+    </div>
+    <div class="dgrid" id="dashGrid"></div>
+    <p class="muted small dnote">โปรเจกต์ที่บันทึกเก็บไว้ในเครื่องนี้เท่านั้น ถ้าต้องการย้ายไปเครื่องอื่น ให้กด ⋯ แล้วเลือก "ส่งออกไฟล์ .iotf"</p>
+  </div>
+</section>
+
 <div id="modal" hidden><div class="dialog" id="dialog"></div></div>
 
 <script src="vendor/wokwi-elements.js"></script>
@@ -144,6 +171,7 @@
 <script src="js/blocks.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/autocomplete.js"></script>
+<script src="js/projects.js"></script>
 <script src="js/app.js"></script>
 <noscript><h1>WJSIM – โปรแกรมจำลองวงจร IoT ออนไลน์ฟรี</h1><p>ต่อวงจร ESP32 และ Arduino เขียนโค้ดด้วย Block ภาษาไทยหรือ C++ แล้วจำลองการทำงานบนเบราว์เซอร์ กรุณาเปิด JavaScript เพื่อใช้งาน</p></noscript>
 </body>

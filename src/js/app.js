@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
   app.pageTitle = document.title;
@@ -32,6 +32,7 @@
     renderChecks();
     $('serialOut').textContent = ''; $('sdOut').textContent = 'ยังไม่มีไฟล์';
     app.path = opts.path || null; app.isDirty = !!opts.dirty; updateTitle();
+    if (IOTF.projects) IOTF.projects.hide();
   }
 
   /* ---------- one program per board ---------- */
@@ -126,12 +127,15 @@
     if (host || app.isDirty) document.title = `${app.isDirty ? '● ' : ''}${name} — WJSIM`;
     else document.title = app.pageTitle;
     if (host && host.setTitle) host.setTitle(document.title);
+    const sb = $('btnSave');
+    if (sb) { sb.classList.toggle('dirty', app.isDirty); $('saveLabel').textContent = app.isDirty || !ed.project.dashId ? 'บันทึก' : 'บันทึกแล้ว'; }
   }
+  app.updateTitle = updateTitle;
   let saveT = null;
   app.dirty = function () {
     app.isDirty = true; updateTitle();
     clearTimeout(saveT);
-    saveT = setTimeout(() => { try { localStorage.setItem('iotforge-autosave', JSON.stringify(snapshotProject())); } catch (e) { /* storage unavailable */ } }, 600);
+    saveT = setTimeout(() => { try { localStorage.setItem('iotforge-autosave', JSON.stringify(snapshotProject())); localStorage.setItem('iotforge-autosave-dirty', app.isDirty ? '1' : ''); } catch (e) { /* storage unavailable */ } }, 600);
   };
   function snapshotProject() {
     const p = ed.project;
@@ -184,16 +188,17 @@
   /* ---------- files ---------- */
   function fileName() { return (ed.project.name || 'project').replace(/[\\/:*?"<>|]/g, '_'); }
   async function save(as) {
-    const data = JSON.stringify(snapshotProject(), null, 1);
+    const snap = Object.assign({}, snapshotProject()); delete snap.dashId;
+    const data = JSON.stringify(snap, null, 1);
     if (host && host.saveProject) {
       const r = await host.saveProject(data, as ? null : app.path, fileName() + '.iotf');
       if (!r) return false;
       app.path = r.path; ed.project.name = r.name.replace(/\.iotf$/i, '');
     } else {
       const name = prompt('ชื่อไฟล์โปรเจกต์', fileName()); if (!name) return false;
-      ed.project.name = name; download(name + '.iotf', JSON.stringify(snapshotProject(), null, 1), 'application/json');
+      ed.project.name = name; snap.name = name; download(name + '.iotf', JSON.stringify(snap, null, 1), 'application/json');
     }
-    app.isDirty = false; updateTitle(); toast('บันทึกแล้ว');
+    toast('บันทึกเป็นไฟล์แล้ว');
     return true;
   }
   function download(name, text, type) {
@@ -221,6 +226,8 @@
     } catch (e) { alert('เปิดไฟล์ไม่ได้: ' + e.message); }
   }
   app.loadFromText = loadFromText;
+  app.snapshot = () => snapshotProject();
+  app.openProject = openProject; app.newProject = newProject; app.boardPart = boardPart; app.download = download;
   async function exportIno() {
     const code = ed.project.codeManual ? app.cm.getValue() : blocks.code();
     const header = `// ${ed.project.name} — ส่งออกจาก WJSIM สำหรับบอร์ด ${ed.boardDef().name}\n`;
@@ -228,6 +235,7 @@
     else download(fileName() + '.ino', header + code, 'text/plain');
   }
   function confirmDiscard() { return !app.isDirty || confirm('โปรเจกต์ปัจจุบันยังไม่ได้บันทึก ต้องการทิ้งการแก้ไขไหม?'); }
+  app.confirmDiscard = confirmDiscard;
   function newProj() {
     if (!confirmDiscard()) return;
     const p = newProject(ed.project ? ed.project.mode : 'basic');
@@ -236,6 +244,7 @@
   }
 
   /* ---------- examples / about dialogs ---------- */
+  app.showExamples = () => showExamples();
   function showExamples() {
     const m = $('modal'), dlg = $('dialog');
     const card = (t) => `<div class="tcard" data-id="${t.id}"><b>${t.title}</b><span class="muted small">${t.desc}</span><div class="small" style="margin-top:6px;color:#e87d0d">${IOTF.BOARDS[t.board].name}</div></div>`;
@@ -274,7 +283,7 @@
     const m = $('modal'), dlg = $('dialog');
     dlg.innerHTML = `<h2>WJSIM ${VERSION}</h2>
       <p>โปรแกรมจำลองวงจร IoT ใช้งานแบบออฟไลน์ ฟรี และเป็นโอเพนซอร์ส (MIT License)</p>
-      <h4>คีย์ลัด</h4><p class="small">Ctrl/⌘+S บันทึก · Ctrl/⌘+O เปิด · Ctrl/⌘+N ใหม่ · Ctrl/⌘+Enter เริ่ม/หยุดจำลอง · Ctrl/⌘+Z ย้อน · R หมุนชิ้นส่วน · Delete ลบ · Esc ยกเลิกการต่อสาย · ล้อเมาส์ ซูม · ลากพื้นที่ว่าง เลื่อนมุมมอง</p>
+      <h4>คีย์ลัด</h4><p class="small">Ctrl/⌘+S บันทึกลงโปรเจกต์ของฉัน · Ctrl/⌘+Shift+S บันทึกเป็นไฟล์ · Ctrl/⌘+O เปิดไฟล์ · Ctrl/⌘+N ใหม่ · Ctrl/⌘+Enter เริ่ม/หยุดจำลอง · Ctrl/⌘+Z ย้อน · R หมุนชิ้นส่วน · Delete ลบ · Esc ยกเลิกการต่อสาย · ล้อเมาส์ ซูม · ลากพื้นที่ว่าง เลื่อนมุมมอง</p>
       <h4>เครดิตและสัญญาอนุญาต</h4>
       <p class="small"><b>ภาพอุปกรณ์ 50 ชิ้น</b> จาก wokwi-elements 1.9.2 © 2020 Uri Shaked — MIT License<br>
       <b>ภาพอุปกรณ์ 7 ชิ้น</b> (pH, TDS, Load Cell, RC522, NEO-6M, SX1278, Relay 4 ช่อง) วาดขึ้นใหม่สำหรับ WJSIM — MIT License<br>
@@ -334,7 +343,10 @@
       if (lost > 0) toast(`ลบสาย ${lost} เส้น เพราะ ${ed.boardDef().name} ไม่มีขาเดียวกัน`);
     };
     $('btnRun').onclick = toggleRun;
-    $('btnNew').onclick = newProj; $('btnOpen').onclick = open; $('btnSave').onclick = () => save(false);
+    const saveDash = () => IOTF.projects.save();
+    $('btnNew').onclick = newProj; $('btnOpen').onclick = open; $('btnSave').onclick = saveDash;
+    $('btnDash').onclick = () => IOTF.projects.show();
+    IOTF.projects.init();
     $('btnExamples').onclick = showExamples; $('btnExport').onclick = exportIno; $('btnAbout').onclick = showAbout;
     $('wireStyle').onchange = (e) => ed.setWireStyle(e.target.value);
     $('btnRoute').onclick = () => { ed.autoRoute(); toast('จัดสายเรียบร้อย กด Ctrl+Z เพื่อย้อนกลับได้'); };
@@ -355,7 +367,7 @@
       const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
       const typing = e.target.closest && (e.target.closest('input,textarea,select,.CodeMirror,.blocklyWidgetDiv,#blocklyDiv'));
       if (host && mod && ['s', 'o', 'n', 'enter', 'z', 'y', 'e'].includes(k)) return;
-      if (mod && k === 's') { e.preventDefault(); save(e.shiftKey); return; }
+      if (mod && k === 's') { e.preventDefault(); if (e.shiftKey) save(true); else saveDash(); return; }
       if (mod && k === 'o') { e.preventDefault(); open(); return; }
       if (mod && k === 'n' && !e.shiftKey) { e.preventDefault(); newProj(); return; }
       if (mod && k === 'enter') { e.preventDefault(); toggleRun(); return; }
@@ -379,7 +391,7 @@
     }
     if (host) {
       host.onMenu && host.onMenu((cmd) => {
-        ({ new: newProj, open, save: () => save(false), saveAs: () => save(true), export: exportIno, examples: showExamples, about: showAbout, run: toggleRun, undo: () => smartUndo(false), redo: () => smartUndo(true) }[cmd] || (() => { }))();
+        ({ new: newProj, open, save: saveDash, saveAs: () => save(true), projects: () => IOTF.projects.show(), export: exportIno, examples: showExamples, about: showAbout, run: toggleRun, undo: () => smartUndo(false), redo: () => smartUndo(true) }[cmd] || (() => { }))();
       });
       host.onOpenFile && host.onOpenFile((r) => { if (confirmDiscard()) loadFromText(r.text, r.path, r.name); });
     }
@@ -388,9 +400,11 @@
     let restored = false;
     try {
       const s = localStorage.getItem('iotforge-autosave');
-      if (s) { const p = JSON.parse(s); if (p && Array.isArray(p.parts)) { openProject(p, { dirty: false }); restored = true; } }
+      if (s) { const p = JSON.parse(s); if (p && Array.isArray(p.parts)) { openProject(p, { dirty: localStorage.getItem('iotforge-autosave-dirty') === '1' }); restored = true; } }
     } catch (e) { /* ignore */ }
     if (!restored) loadTemplate('blink');
+    // open on "My projects" when there is something saved
+    IOTF.projects.count().then((n) => { if (n) IOTF.projects.show(); }).catch(() => { });
     if (host && host.ready) host.ready();
   }
   window.addEventListener('DOMContentLoaded', init);
