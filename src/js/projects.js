@@ -1,5 +1,6 @@
 /* WJSIM — "My projects" dashboard and the project store.
- * Projects live in this app's IndexedDB (browser or desktop app), so nothing leaves the computer.
+ * Projects live in this app's IndexedDB (browser or desktop app). When signed in with Google (web only),
+ * cloud.js also copies each save/delete to Firestore.
  * The dashboard lists them with a small map of the circuit; Save puts the open project into it. */
 (function () {
   'use strict';
@@ -38,6 +39,8 @@
     put: (rec) => tx('readwrite', (s) => (s ? s.put(rec) : memory.set(rec.id, rec))),
     del: (id) => tx('readwrite', (s) => (s ? s.delete(id) : memory.delete(id))),
   };
+  const cloudPut = (rec) => { if (IOTF.cloud) IOTF.cloud.pushed(rec); };
+  const cloudDel = (id) => { if (IOTF.cloud) IOTF.cloud.removed(id); };
   const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
   /* ---------- a small map of the circuit, drawn from the live editor ---------- */
@@ -77,7 +80,7 @@
     if (!p.dashId) p.dashId = newId();
     const old = await store.get(p.dashId);
     const rec = Object.assign({ id: p.dashId, createdAt: Date.now() }, old ? { createdAt: old.createdAt } : {}, summary(p), { name: p.name, updatedAt: Date.now(), thumb: thumbnail(), data: JSON.parse(JSON.stringify(p)) });
-    await store.put(rec);
+    await store.put(rec); cloudPut(rec);
     return rec;
   }
   // Save button: first time asks for a name, after that saves in place
@@ -166,19 +169,19 @@
     card.querySelector('.pmenu').hidden = true;
     if (act === 'rename') {
       const name = await askName('เปลี่ยนชื่อโปรเจกต์', rec.name); if (!name) return;
-      rec.name = name; rec.data.name = name; await store.put(rec);
+      rec.name = name; rec.data.name = name; rec.updatedAt = Date.now(); await store.put(rec); cloudPut(rec);
       if (IOTF.editor.project.dashId === id) { IOTF.editor.project.name = name; app.updateTitle(); }
       return render();
     }
     if (act === 'dup') {
       const copy = JSON.parse(JSON.stringify(rec)); copy.id = newId(); copy.name = rec.name + ' (สำเนา)'; copy.data.name = copy.name; copy.data.dashId = copy.id; copy.createdAt = copy.updatedAt = Date.now();
-      await store.put(copy); app.toast('ทำสำเนาแล้ว'); return render();
+      await store.put(copy); cloudPut(copy); app.toast('ทำสำเนาแล้ว'); return render();
     }
     if (act === 'export') { const d = Object.assign({}, rec.data); delete d.dashId; app.download(rec.name.replace(/[\\/:*?"<>|]/g, '_') + '.iotf', JSON.stringify(d, null, 1), 'application/json'); return; }
     if (act === 'del') { card.querySelector('.pconfirm').hidden = false; return; }
     if (act === 'delno') { card.querySelector('.pconfirm').hidden = true; return; }
     if (act === 'delyes') {
-      await store.del(id);
+      await store.del(id); cloudDel(id);
       if (IOTF.editor.project.dashId === id) delete IOTF.editor.project.dashId;
       app.toast(`ลบ "${rec.name}" แล้ว`); return render();
     }
@@ -224,5 +227,5 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !d.hidden && $('modal').hidden && IOTF.editor.project.parts.length) hide(); });
   }
 
-  IOTF.projects = { save, show, hide, init, store, count: async () => (await store.all()).length, thumbnail };
+  IOTF.projects = { save, show, hide, init, store, render, count: async () => (await store.all()).length, thumbnail };
 })();

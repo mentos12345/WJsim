@@ -45,6 +45,7 @@ No artwork from Fritzing (CC BY-SA 3.0) or from product photos was used.
 | Component | Version | License | Copyright |
 |---|---|---|---|
 | [Blockly](https://github.com/google/blockly) (incl. Thai messages and media) | 13.4.0 | Apache License 2.0 — `src/vendor/LICENSE-blockly.txt` | Google LLC |
+| [Firebase JS SDK](https://github.com/firebase/firebase-js-sdk) (web version only, for Sign in with Google) | 11.10.0 | Apache License 2.0 — `src/vendor/LICENSE-firebase.txt` | Google LLC |
 | [CodeMirror](https://codemirror.net/5/) | 5.65 | MIT — `src/vendor/LICENSE-codemirror.txt` | Marijn Haverbeke and others |
 | [Electron](https://www.electronjs.org/) (desktop app only) | 45 | MIT | OpenJS Foundation and Electron contributors |
 

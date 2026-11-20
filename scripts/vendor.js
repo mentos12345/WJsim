@@ -13,4 +13,8 @@ fs.cpSync(path.join(nm, 'blockly/media'), path.join(out, 'blockly-media'), { rec
 cp('@wokwi/elements/LICENSE', 'LICENSE-wokwi-elements.txt');
 cp('blockly/LICENSE', 'LICENSE-blockly.txt');
 cp('codemirror/LICENSE', 'LICENSE-codemirror.txt');
+['app', 'auth', 'firestore'].forEach((m) => {
+  const f = `firebase/firebase-${m}-compat.js`;
+  cp(f, f); const o = path.join(out, f); fs.writeFileSync(o, fs.readFileSync(o, 'utf8').replace(/\/\/# sourceMappingURL=.*$/m, ''));
+});
 console.log('vendor files updated in', out);
