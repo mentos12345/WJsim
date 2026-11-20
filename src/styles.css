@@ -242,3 +242,4 @@ li.CodeMirror-hint-active .ac-detail{color:#c9b39a}
 .dnote{margin-top:22px}
 @media (max-width:760px){.dnew{grid-template-columns:1fr}.dnewcard{grid-row:auto}.dhead .brand{display:none}}
 body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-open .blocklyDropDownDiv,body.dash-open .blocklyTooltipDiv,body.dash-open .CodeMirror-hints{display:none!important}
+#props input[data-ohm].bad{border-color:var(--bad);outline-color:var(--bad)}
