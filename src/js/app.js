@@ -130,7 +130,8 @@
     if (host && host.setTitle) host.setTitle(document.title);
     try { localStorage.setItem('iotforge-autosave-dirty', app.isDirty ? '1' : ''); } catch (e) { /* storage unavailable */ }
     const sb = $('btnSave');
-    if (sb) { sb.classList.toggle('dirty', app.isDirty); $('saveLabel').textContent = app.isDirty || !ed.project.dashId ? 'บันทึก' : 'บันทึกแล้ว'; }
+    if (sb) { sb.classList.toggle('dirty', app.isDirty); $('saveLabel').textContent = app.isDirty || !ed.project.dashId ? 'บันทึก' : 'บันทึกอัตโนมัติแล้ว';
+      sb.title = ed.project.dashId ? 'บันทึกอัตโนมัติเปิดอยู่ (Ctrl+S บันทึกทันที)' : 'บันทึกลงโปรเจกต์ของฉัน (Ctrl+S) หลังจากนั้นจะบันทึกอัตโนมัติ'; }
   }
   app.updateTitle = updateTitle;
   let saveT = null;
@@ -138,7 +139,14 @@
     app.isDirty = true; updateTitle();
     clearTimeout(saveT);
     saveT = setTimeout(writeAutosave, 600);
+    clearTimeout(autoT);
+    autoT = setTimeout(() => IOTF.projects.autoSave(), 2500);
   };
+  let autoT = null;
+  // leaving the page or switching apps (phones) saves right away
+  const flushAuto = () => { if (app.isDirty) { writeAutosave(); clearTimeout(autoT); IOTF.projects.autoSave(); } };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAuto(); });
+  window.addEventListener('pagehide', flushAuto);
   // the open project is kept in the browser so a reload or crash comes back to it
   function writeAutosave() {
     clearTimeout(saveT);
