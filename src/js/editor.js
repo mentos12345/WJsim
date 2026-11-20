@@ -796,6 +796,23 @@
     else if (ed.sel) ed.removePart(ed.sel);
   };
 
+  /* resistor value: "220", "4.7k", "4k7", "1M", "10 kΩ" -> ohms (0.1 Ω .. 100 MΩ) */
+  function parseOhm(t) {
+    t = String(t).trim().replace(/\s+/g, '').replace(/[Ωω]|ohms?$/gi, '').replace(',', '.');
+    const m = t.match(/^(\d*\.?\d*)([rkKmM]?)(\d*)$/);
+    if (!m || !(m[1] + m[3]) || m[1] === '.') return null;
+    const mul = { '': 1, r: 1, R: 1, k: 1e3, K: 1e3, m: 1e6, M: 1e6 }[m[2]];
+    const n = m[3] ? parseFloat((m[1] || '0') + '.' + m[3]) : parseFloat(m[1]); // 4k7 = 4.7k
+    const v = Math.round(n * mul * 100) / 100;
+    return isFinite(v) && v >= 0.1 && v <= 1e8 ? v : null;
+  }
+  function fmtOhm(v) {
+    v = Number(v);
+    const f = (x) => String(Math.round(x * 100) / 100);
+    return v >= 1e6 ? f(v / 1e6) + 'M' : v >= 1e3 ? f(v / 1e3) + 'k' : f(v);
+  }
+  ed.parseOhm = parseOhm;
+
   /* ---------- properties panel ---------- */
   function renderProps() {
     const box = $('props');
@@ -824,6 +841,10 @@
       else h += `<div class="row"><label>${simLabel(k)}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${p.sim[k]}" data-sim="${k}"><output>${fmt(p.sim[k], step)} ${unit}</output></div>`;
     });
     if (d.opts) Object.entries(d.opts).forEach(([k, list]) => {
+      if (d.kind === 'resistor' && k === 'value') { // type any value: 220, 4.7k, 4k7, 1M
+        h += `<div class="row"><label>ค่า (Ω)</label><input data-ohm list="ohmList" inputmode="decimal" placeholder="เช่น 220, 4.7k, 1M" value="${fmtOhm(p.attrs.value)}"><datalist id="ohmList">${list.map((v) => `<option value="${fmtOhm(v)}">`).join('')}</datalist></div>`;
+        return;
+      }
       h += `<div class="row"><label>${k === 'color' ? 'สี' : k === 'value' ? 'ค่า (Ω)' : k}</label><select data-attr="${k}">${list.map((v) => `<option ${p.attrs[k] == v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
     });
     if (d.kind === 'rfid') h += `<div class="row"><label>UID บัตร</label><input data-rfid value="${p.sim.uid || 'DE AD BE EF'}"></div><div class="btnrow"><button class="btn pri" data-act="tap">แตะบัตร</button></div>`;
@@ -854,6 +875,18 @@
       const o = inp.nextElementSibling; if (o && o.tagName === 'OUTPUT') o.textContent = fmt(p.sim[k], d.sim[k][3]) + ' ' + d.sim[k][4];
       changed('sim');
     });
+    const ohm = box.querySelector('[data-ohm]');
+    if (ohm) {
+      const apply = () => {
+        const v = parseOhm(ohm.value);
+        if (v == null) { ohm.classList.add('bad'); ohm.title = 'ใส่ตัวเลข เช่น 220, 4.7k, 1M'; return; }
+        ohm.classList.remove('bad'); ohm.title = '';
+        if (String(v) !== String(p.attrs.value)) { snapshot(); p.attrs.value = String(v); ed.applyAttrs(p); changed('style'); }
+        ohm.value = fmtOhm(v);
+      };
+      ohm.onchange = apply;
+      ohm.onkeydown = (e) => { if (e.key === 'Enter') { apply(); ohm.blur(); } };
+    }
     box.querySelectorAll('[data-attr]').forEach((s) => s.onchange = () => { p.attrs[s.dataset.attr] = s.value; ed.applyAttrs(p); changed('style'); });
     const r = box.querySelector('[data-rfid]'); if (r) r.oninput = () => { p.sim.uid = r.value; };
     const tap = box.querySelector('[data-act=tap]'); if (tap) tap.onclick = () => { p.sim.tap = Date.now(); if (IOTF.sim) IOTF.sim.event('rfid', p); };
