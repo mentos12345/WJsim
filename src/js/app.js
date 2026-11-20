@@ -355,6 +355,7 @@
     $('btnNew').onclick = newProj; $('btnOpen').onclick = open; $('btnSave').onclick = saveDash;
     $('btnDash').onclick = () => IOTF.projects.show();
     IOTF.projects.init();
+    if (IOTF.cloud) IOTF.cloud.init();
     $('btnExamples').onclick = showExamples; $('btnExport').onclick = exportIno; $('btnAbout').onclick = showAbout;
     $('wireStyle').onchange = (e) => ed.setWireStyle(e.target.value);
     $('btnRoute').onclick = () => { ed.autoRoute(); toast('จัดสายเรียบร้อย กด Ctrl+Z เพื่อย้อนกลับได้'); };

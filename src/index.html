@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'unsafe-eval' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; media-src 'self' blob:; connect-src 'self' https://*.googleapis.com; frame-src https://*.firebaseapp.com https://accounts.google.com">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WJSIM ออนไลน์ – จำลองวงจร IoT ESP32 Arduino ฟรีบนเว็บ</title>
 <meta name="google-site-verification" content="pgYSBHdljlbdKcqsbRcqbaq6eOYYaUa8uuh8fjqzSFM">
@@ -132,6 +132,7 @@
     <div class="brand"><img src="favicon.svg" width="24" height="24" alt="">WJSIM</div>
     <div class="dtitle"><h1>โปรเจกต์ของฉัน</h1><span id="dashCount" class="muted"></span></div>
     <div class="spacer"></div>
+    <div id="acct" class="acct" hidden></div>
     <button class="btn" id="dashBack" hidden>กลับไปที่โปรเจกต์</button>
     <button class="tb dclose" id="dashClose" title="ปิด (Esc)" aria-label="ปิด">✕</button>
   </header>
@@ -149,7 +150,7 @@
       <select id="dashSort"><option value="recent">แก้ไขล่าสุด</option><option value="name">ชื่อ ก–ฮ</option></select>
     </div>
     <div class="dgrid" id="dashGrid"></div>
-    <p class="muted small dnote">โปรเจกต์ที่บันทึกเก็บไว้ในเครื่องนี้เท่านั้น ถ้าต้องการย้ายไปเครื่องอื่น ให้กด ⋯ แล้วเลือก "ส่งออกไฟล์ .iotf"</p>
+    <p class="muted small dnote" id="dashNote">โปรเจกต์ที่บันทึกเก็บไว้ในเครื่องนี้เท่านั้น ถ้าต้องการย้ายไปเครื่องอื่น ให้กด ⋯ แล้วเลือก "ส่งออกไฟล์ .iotf"</p>
   </div>
 </section>
 
@@ -172,6 +173,8 @@
 <script src="js/templates.js"></script>
 <script src="js/autocomplete.js"></script>
 <script src="js/projects.js"></script>
+<script src="js/cloud-config.js"></script>
+<script src="js/cloud.js"></script>
 <script src="js/app.js"></script>
 <noscript><h1>WJSIM – โปรแกรมจำลองวงจร IoT ออนไลน์ฟรี</h1><p>ต่อวงจร ESP32 และ Arduino เขียนโค้ดด้วย Block ภาษาไทยหรือ C++ แล้วจำลองการทำงานบนเบราว์เซอร์ กรุณาเปิด JavaScript เพื่อใช้งาน</p></noscript>
 </body>

@@ -243,3 +243,12 @@ li.CodeMirror-hint-active .ac-detail{color:#c9b39a}
 @media (max-width:760px){.dnew{grid-template-columns:1fr}.dnewcard{grid-row:auto}.dhead .brand{display:none}}
 body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-open .blocklyDropDownDiv,body.dash-open .blocklyTooltipDiv,body.dash-open .CodeMirror-hints{display:none!important}
 #props input[data-ohm].bad{border-color:var(--bad);outline-color:var(--bad)}
+/* account (Sign in with Google, web only) */
+.acct{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}
+.acct .gsign{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#1f1f1f;border-color:#dadce0}
+.acct .gsign:hover{background:#f3f4f6}
+.acct .acav{width:26px;height:26px;border-radius:50%}
+.acct .acname{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct .acst{color:var(--muted,#a2a4ab);white-space:nowrap}
+.acct .acst.error{color:var(--bad,#e5484d)}
+@media (max-width:700px){.acct .acname,.acct .acst{display:none}}

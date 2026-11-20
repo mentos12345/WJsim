@@ -1,0 +1,13 @@
+rules_version = '2';
+// WJSIM: each signed-in user can read and write only their own projects.
+// Firebase console -> Firestore Database -> Rules -> paste this -> Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/projects/{projectId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.id == projectId
+        && request.resource.size() < 1000000;
+    }
+  }
+}
