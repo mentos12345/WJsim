@@ -230,6 +230,7 @@
       if (!p || !Array.isArray(p.parts)) throw new Error('ไม่ใช่ไฟล์โปรเจกต์ WJSIM');
       p.name = p.name && p.name !== 'ไม่มีชื่อ' ? p.name : (name || 'project').replace(/\.(iotf|json)$/i, '');
       openProject(p, { path });
+      if (IOTF.projects) IOTF.projects.hide();
       toast('เปิด ' + p.name);
     } catch (e) { alert('เปิดไฟล์ไม่ได้: ' + e.message); }
   }
@@ -371,6 +372,21 @@
     const closeModal = () => { $('modal').hidden = true; if (app.onModalClose) { const f = app.onModalClose; app.onModalClose = null; f(); } };
     $('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) closeModal(); });
     initSplitters();
+    // phone / iPad portrait: one panel at a time, switched from the bar at the bottom
+    app.showView = (v) => {
+      if (!document.body.classList.contains('narrow')) return;
+      document.body.dataset.mview = v;
+      document.querySelectorAll('#mnav button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+      requestAnimationFrame(() => { blocks.resize(); app.cm.refresh(); window.dispatchEvent(new Event('resize')); });
+    };
+    document.querySelectorAll('#mnav button').forEach((b) => { b.onclick = () => app.showView(b.dataset.v); });
+    const narrowQ = window.matchMedia('(max-width: 900px)');
+    const onNarrow = () => {
+      document.body.classList.toggle('narrow', narrowQ.matches);
+      if (narrowQ.matches && !document.body.dataset.mview) document.body.dataset.mview = 'stage';
+      requestAnimationFrame(() => { blocks.resize(); app.cm.refresh(); });
+    };
+    narrowQ.addEventListener('change', onNarrow); onNarrow();
     window.addEventListener('resize', () => { blocks.resize(); });
 
     document.addEventListener('keydown', (e) => {
@@ -416,8 +432,8 @@
       if (s) { const p = JSON.parse(s); if (p && Array.isArray(p.parts)) { openProject(p, { dirty: localStorage.getItem('iotforge-autosave-dirty') === '1' }); restored = true; } }
     } catch (e) { /* ignore */ }
     if (!restored) loadTemplate('blink');
-    // open on "My projects" when there is something saved
-    IOTF.projects.count().then((n) => { if (n) IOTF.projects.show(); }).catch(() => { });
+    // always start on "My projects" (the open project stays behind it; "กลับไปที่ ..." returns to it)
+    IOTF.projects.show();
     if (host && host.ready) host.ready();
   }
   window.addEventListener('DOMContentLoaded', init);
