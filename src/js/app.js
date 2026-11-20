@@ -373,7 +373,9 @@
     window.addEventListener('resize', () => { blocks.resize(); });
 
     document.addEventListener('keydown', (e) => {
-      const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey;
+      // letter shortcuts use the physical key, so they still work with a Thai keyboard layout (R types "พ")
+      const k = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
       const typing = e.target.closest && (e.target.closest('input,textarea,select,.CodeMirror,.blocklyWidgetDiv,#blocklyDiv'));
       if (host && mod && ['s', 'o', 'n', 'enter', 'z', 'y', 'e'].includes(k)) return;
       if (mod && k === 's') { e.preventDefault(); if (e.shiftKey) save(true); else saveDash(); return; }
