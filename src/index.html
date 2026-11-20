@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'unsafe-eval' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; media-src 'self' blob:; connect-src 'self' https://*.googleapis.com; frame-src https://*.firebaseapp.com https://accounts.google.com">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WJSIM ออนไลน์ – จำลองวงจร IoT ESP32 Arduino ฟรีบนเว็บ</title>
 <meta name="google-site-verification" content="pgYSBHdljlbdKcqsbRcqbaq6eOYYaUa8uuh8fjqzSFM">
 <meta name="description" content="จำลองวงจร IoT ฟรีบนเบราว์เซอร์ ไม่ต้องติดตั้ง ต่อวงจร ESP32 และ Arduino เขียนโค้ดด้วย Block ภาษาไทยหรือ C++ จำลอง WiFi MQTT ESP-NOW หลายบอร์ดส่งข้อมูลหากัน">
@@ -127,6 +127,13 @@
   <div class="bpane" id="bpane-files" hidden><pre id="sdOut"></pre></div>
 </footer>
 
+<nav id="mnav" aria-label="สลับหน้าจอ">
+  <button data-v="parts">อุปกรณ์</button>
+  <button data-v="stage" class="on">วงจร</button>
+  <button data-v="right">โค้ด</button>
+  <button data-v="bottom">Serial</button>
+</nav>
+
 <section id="dash" hidden aria-label="โปรเจกต์ของฉัน">
   <header class="dhead">
     <div class="brand"><img src="favicon.svg" width="24" height="24" alt="">WJSIM</div>
@@ -137,6 +144,11 @@
     <button class="tb dclose" id="dashClose" title="ปิด (Esc)" aria-label="ปิด">✕</button>
   </header>
   <div class="dwrap">
+    <div class="dlogin" id="dashLogin" hidden>
+      <div><b>เข้าสู่ระบบเพื่อเก็บโปรเจกต์ไว้ในคลาวด์</b><p class="muted small">เปิดต่อได้ทุกเครื่องทั้งคอม มือถือ และ iPad ไม่ต้องกลัวงานหาย</p></div>
+      <button class="btn gsign" id="dashLoginBtn">เข้าสู่ระบบด้วย Google</button>
+      <button class="tb" id="dashLoginSkip">ใช้แบบไม่ล็อกอิน</button>
+    </div>
     <div class="dnew">
       <button class="dnewcard" id="dashNewBasic"><b>+ โปรเจกต์ใหม่ Basic</b><span>ต่อง่าย เขียนด้วย Block ภาษาไทย</span></button>
       <button class="dnewcard adv" id="dashNewAdv"><b>+ โปรเจกต์ใหม่ Advanced</b><span>ต่อวงจรเองครบ เขียน C++</span></button>

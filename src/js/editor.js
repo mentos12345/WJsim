@@ -596,10 +596,25 @@
       if (!ed.running) select(null);
       const sx = e.clientX, sy = e.clientY, px = ed.panX, py = ed.panY;
       st.classList.add('panning');
-      const mv = (ev) => { ed.panX = px + ev.clientX - sx; ed.panY = py + ev.clientY - sy; applyView(); };
+      const mv = (ev) => { if (touches.size > 1) return; ed.panX = px + ev.clientX - sx; ed.panY = py + ev.clientY - sy; applyView(); };
       const up = () => { st.classList.remove('panning'); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
     });
+    // pinch to zoom (two fingers), handled before the one-finger pan above
+    const touches = new Map(); let pinch = null;
+    const two = () => { const [a, b] = [...touches.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+    st.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) pinch = two(); } }, true);
+    st.addEventListener('pointermove', (e) => {
+      if (!touches.has(e.pointerId)) return;
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size !== 2 || !pinch) return;
+      const now = two();
+      ed.panX += now.x - pinch.x; ed.panY += now.y - pinch.y;
+      zoomAt(now.d / pinch.d, now.x, now.y);
+      pinch = now;
+    }, true);
+    const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+    window.addEventListener('pointerup', lift); window.addEventListener('pointercancel', lift);
     st.addEventListener('pointermove', (e) => {
       if (!ed.armed) return;
       const a = ed.pinPos(ed.armed.p, ed.armed.pin); if (!a) return;
@@ -915,12 +930,29 @@
     });
     $('partList').innerHTML = h || '<p class="muted small">ไม่พบอุปกรณ์</p>';
   };
+  // add a part in the middle of the visible stage (double-click, or a tap on a phone/tablet)
+  ed.addAtCenter = function (type) {
+    if (ed.running) return;
+    if (IOTF.app && IOTF.app.showView) IOTF.app.showView('stage'); // phone layout: jump to the circuit
+    const r = $('stage').getBoundingClientRect(); const w = ed.toWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const n = ed.project.parts.length; ed.addPart(type, w.x - 40 + (n % 4) * 20, w.y - 30 + (n % 3) * 20);
+  };
   ed.initPalette = function () {
     $('partSearch').oninput = ed.renderPalette;
     $('partList').addEventListener('pointerdown', (e) => {
       const it = e.target.closest('.pitem'); if (!it || ed.running) return;
-      e.preventDefault();
       const type = it.dataset.type;
+      if (e.pointerType !== 'mouse') { // touch/pen: a tap adds the part, a swipe scrolls the list
+        const sx = e.clientX, sy = e.clientY;
+        const tup = (ev) => {
+          window.removeEventListener('pointerup', tup); window.removeEventListener('pointercancel', tcancel);
+          if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 10) ed.addAtCenter(type);
+        };
+        const tcancel = () => { window.removeEventListener('pointerup', tup); window.removeEventListener('pointercancel', tcancel); };
+        window.addEventListener('pointerup', tup); window.addEventListener('pointercancel', tcancel);
+        return;
+      }
+      e.preventDefault();
       const ghost = document.createElement('div');
       ghost.textContent = P[type].name;
       ghost.style.cssText = 'position:fixed;pointer-events:none;background:#e87d0d;color:#fff;padding:3px 9px;border-radius:5px;z-index:99;font-size:12px';
@@ -940,8 +972,7 @@
     });
     $('partList').addEventListener('dblclick', (e) => {
       const it = e.target.closest('.pitem'); if (!it || ed.running) return;
-      const r = $('stage').getBoundingClientRect(); const w = ed.toWorld(r.left + r.width / 2, r.top + r.height / 2);
-      const n = ed.project.parts.length; ed.addPart(it.dataset.type, w.x - 40 + (n % 4) * 20, w.y - 30 + (n % 3) * 20);
+      ed.addAtCenter(it.dataset.type);
     });
   };
 
