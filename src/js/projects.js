@@ -94,9 +94,23 @@
     }
     try { await saveCurrent(); } catch (e) { app.toast('บันทึกไม่ได้: ' + e.message); return false; }
     app.isDirty = false; app.updateTitle(); app.writeAutosave();
-    app.toast(`บันทึก "${p.name}" ลงในโปรเจกต์ของฉันแล้ว`);
+    app.toast(known ? `บันทึก "${p.name}" แล้ว` : `บันทึก "${p.name}" แล้ว ต่อจากนี้จะบันทึกอัตโนมัติ`);
     if (!$('dash').hidden) render();
     return true;
+  }
+  // auto save: a project already in "My projects" is saved again a moment after each change
+  let autoBusy = false;
+  async function autoSave() {
+    const app = IOTF.app, p = IOTF.editor.project;
+    if (!p || !p.dashId || !app.isDirty || autoBusy) return false;
+    autoBusy = true;
+    try {
+      if (!(await store.get(p.dashId))) return false; // deleted from My projects: wait for a manual save
+      await saveCurrent();
+      app.isDirty = false; app.updateTitle(); app.writeAutosave();
+      return true;
+    } catch (e) { console.warn('autosave', e); return false; }
+    finally { autoBusy = false; }
   }
   async function openRec(id) {
     const app = IOTF.app;
@@ -227,5 +241,5 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !d.hidden && $('modal').hidden && IOTF.editor.project.parts.length) hide(); });
   }
 
-  IOTF.projects = { save, show, hide, init, store, render, count: async () => (await store.all()).length, thumbnail };
+  IOTF.projects = { save, autoSave, show, hide, init, store, render, count: async () => (await store.all()).length, thumbnail };
 })();
