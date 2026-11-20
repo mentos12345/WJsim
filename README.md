@@ -1,5 +1,7 @@
 # ⚡ WJSIM
 
+🌐 เว็บไซต์: **https://mentos12345.github.io/WJsim/** · ลองใช้ออนไลน์: **https://wjsim.vercel.app/**
+
 โปรแกรมจำลองวงจร IoT แบบ Tinkercad/Wokwi ที่ทำงาน **ออฟไลน์ 100%** บน Windows, macOS และ Linux
 มี 2 โหมด:
 
