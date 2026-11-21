@@ -68,6 +68,19 @@
   def('iotf_ph', function () { this.appendDummyInput().appendField('ค่า pH ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_tds', function () { this.appendDummyInput().appendField('ค่า TDS (ppm) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   // outputs
+  const pinOrNone = () => new BL.FieldDropdown(function () { const b = board(); return [['ไม่ใช้', '-1']].concat(b.blockPins.map((p) => [/^\d+$/.test(p) && b === IOTF.BOARDS.esp32 ? 'GPIO' + p : p, p])); });
+  def('iotf_motor', function () {
+    this.appendDummyInput().appendField('มอเตอร์ DC').appendField(new BL.FieldDropdown([['เดินหน้า', '1'], ['ถอยหลัง', '-1'], ['หยุด', '0']]), 'DIR');
+    this.appendValueInput('SPEED').setCheck('Number').appendField('ความเร็ว');
+    this.appendDummyInput().appendField('% ขา IN1').appendField(pinField(), 'IN1').appendField('IN2').appendField(pinField(), 'IN2').appendField('EN').appendField(pinOrNone(), 'EN');
+    this.setInputsInline(true); stmt(this, COL.out, 'ใช้กับไดรเวอร์ L298N (IN1, IN2, ENA) หรือ L9110S (A-IA, A-IB เลือก EN = ไม่ใช้)');
+  });
+  def('iotf_stepper28', function () {
+    this.appendValueInput('DEG').setCheck('Number').appendField('หมุนสเต็ปเปอร์ 28BYJ-48');
+    this.appendValueInput('RPM').setCheck('Number').appendField('องศา ความเร็ว');
+    this.appendDummyInput().appendField('รอบ/นาที IN1').appendField(pinField(), 'IN1').appendField('IN2').appendField(pinField(), 'IN2').appendField('IN3').appendField(pinField(), 'IN3').appendField('IN4').appendField(pinField(), 'IN4');
+    this.setInputsInline(true); stmt(this, COL.out, 'ค่าบวกหมุนตามเข็ม ค่าลบหมุนทวนเข็ม ความเร็วไม่เกินราว 15 รอบ/นาที');
+  });
   def('iotf_servo', function () { this.appendValueInput('ANGLE').setCheck('Number').appendField('หมุน Servo ขา').appendField(pinField(), 'PIN').appendField('ไปที่'); this.appendDummyInput().appendField('องศา'); this.setInputsInline(true); stmt(this, COL.out); });
   def('iotf_tone', function () {
     this.appendValueInput('FREQ').setCheck('Number').appendField('เล่นเสียง Buzzer ขา').appendField(pinField(), 'PIN').appendField('ความถี่');
@@ -265,6 +278,31 @@
     G.helpers.set('tds', `float iotfTds(int pin) {\n  float v = analogRead(pin) * ${vref().toFixed(1)} / ${adcMax()}.0;\n  return (133.42 * v * v * v - 255.86 * v * v + 857.39 * v) * 0.5;\n}`);
     return [`iotfTds(${b.getFieldValue('PIN')})`, O.ATOMIC];
   };
+  F.iotf_motor = (b) => {
+    const in1 = b.getFieldValue('IN1'), in2 = b.getFieldValue('IN2'), en = b.getFieldValue('EN');
+    [in1, in2].forEach((p) => pm(p, 'OUTPUT')); if (en !== '-1') pm(en, 'OUTPUT');
+    G.helpers.set('motor', `// dir: 1 forward, -1 backward, 0 stop · speed 0-100 % · en = -1 when there is no enable pin (L9110S)
+void wjMotor(int in1, int in2, int en, int dir, int speed) {
+  int pwm = constrain(speed, 0, 100) * 255 / 100;
+  if (en >= 0) {
+    digitalWrite(in1, dir > 0 ? HIGH : LOW);
+    digitalWrite(in2, dir < 0 ? HIGH : LOW);
+    analogWrite(en, dir == 0 ? 0 : pwm);
+  } else {
+    if (dir > 0) { analogWrite(in1, pwm); digitalWrite(in2, LOW); }
+    else if (dir < 0) { digitalWrite(in1, LOW); analogWrite(in2, pwm); }
+    else { digitalWrite(in1, LOW); digitalWrite(in2, LOW); }
+  }
+}`);
+    return `wjMotor(${in1}, ${in2}, ${en}, ${b.getFieldValue('DIR')}, ${v(b, 'SPEED', O.NONE, '100')});\n`;
+  };
+  F.iotf_stepper28 = (b) => {
+    const pins = ['IN1', 'IN2', 'IN3', 'IN4'].map((k) => b.getFieldValue(k)), name = 'stepper' + pins[0];
+    G.inc.add('Stepper.h');
+    // the Stepper library wants IN1, IN3, IN2, IN4 for a 28BYJ-48 on a ULN2003
+    G.glob.set(name, `Stepper ${name}(2048, ${pins[0]}, ${pins[2]}, ${pins[1]}, ${pins[3]});`);
+    return `${name}.setSpeed(${v(b, 'RPM', O.NONE, '10')});\n${name}.step(${v(b, 'DEG', O.MULTIPLICATION, '90')} * 2048L / 360);\n`;
+  };
   F.iotf_servo = (b) => {
     const p = b.getFieldValue('PIN'); G.inc.add(isEsp() ? 'ESP32Servo.h' : 'Servo.h'); G.glob.set('servo' + p, `Servo servo${p};`); G.setups.set('servo' + p, `servo${p}.attach(${p});`);
     return `servo${p}.write(${v(b, 'ANGLE', O.NONE, '90')});\n`;
@@ -356,7 +394,7 @@
         { kind: 'category', name: 'เวลา', colour: COL.time, contents: [B('iotf_delay', { inputs: { MS: num(1000) } }), B('iotf_millis'), B('iotf_map', { inputs: { V: { shadow: { type: 'iotf_analog_read' } } } })] },
         { kind: 'category', name: 'Serial', colour: COL.serial, contents: [B('iotf_serial_print', { inputs: { VALUE: txt('สวัสดี') } })] },
         { kind: 'category', name: 'เซ็นเซอร์', colour: COL.sensor, contents: sensors },
-        { kind: 'category', name: 'เอาต์พุต', colour: COL.out, contents: [B('iotf_servo', { inputs: { ANGLE: num(90) } }), B('iotf_tone', { inputs: { FREQ: num(1000), MS: num(200) } }), B('iotf_notone'), B('iotf_rgb'), B('iotf_relay'), B('iotf_lcd_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_lcd_clear'), B('iotf_oled_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_oled_clear'), B('iotf_neopixel', { inputs: { I: num(0) } }), B('iotf_neopixel_fill')] },
+        { kind: 'category', name: 'เอาต์พุต', colour: COL.out, contents: [B('iotf_motor', { inputs: { SPEED: num(80) } }), B('iotf_stepper28', { inputs: { DEG: num(90), RPM: num(10) } }), B('iotf_servo', { inputs: { ANGLE: num(90) } }), B('iotf_tone', { inputs: { FREQ: num(1000), MS: num(200) } }), B('iotf_notone'), B('iotf_rgb'), B('iotf_relay'), B('iotf_lcd_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_lcd_clear'), B('iotf_oled_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_oled_clear'), B('iotf_neopixel', { inputs: { I: num(0) } }), B('iotf_neopixel_fill')] },
         { kind: 'category', name: 'บอร์ดคุยกัน', colour: COL.now, contents: [B('iotf_now_send', { inputs: { VALUE: num(1) } }), B('controls_if', { inputs: { IF0: { block: { type: 'iotf_now_new' } } } }), B('iotf_now_new'), B('iotf_now_text'), B('iotf_now_number')] },
         { kind: 'category', name: 'IoT', colour: COL.iot, contents: [B('iotf_wifi'), B('iotf_mqtt_publish', { inputs: { VALUE: num(25) } }), B('iotf_mqtt_value'), B('iotf_mqtt_number')] },
         { kind: 'sep' },

@@ -133,6 +133,75 @@
     const f = (v) => (133.42 * v * v * v - 255.86 * v * v + 857.39 * v) * 0.5;
     let lo = 0, hi = 3.3; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) < ppm) lo = m; else hi = m; } return (lo + hi) / 2;
   }
+  /* ---------- motors: how hard a motor terminal is driven (0..1 of full supply, undefined = floating) ---------- */
+  function hbridgeOut(p, pin) {
+    if (!powered(p)) return undefined;
+    let inPin, enPin = null;
+    if (p.type === 'iotf-l298n') { const m = { OUT1: ['IN1', 'ENA'], OUT2: ['IN2', 'ENA'], OUT3: ['IN3', 'ENB'], OUT4: ['IN4', 'ENB'] }[pin]; if (!m) return undefined; [inPin, enPin] = m; }
+    else { inPin = { A1: 'A-IA', A2: 'A-IB', B1: 'B-IA', B2: 'B-IB' }[pin]; if (!inPin) return undefined; }
+    let duty = 1;
+    if (enPin) { const en = netOf(p, enPin), lv = netLevel(en); duty = lv === undefined ? 1 : lv ? pwmOf(en) : 0; } // ENA/ENB jumper on when not wired
+    if (!duty) return undefined;                                   // outputs off: the motor coasts
+    const n = netOf(p, inPin), lv = netLevel(n);
+    if (lv === undefined) return undefined;
+    return lv ? duty * (enPin ? 1 : pwmOf(n)) : 0;
+  }
+  function driveOf(net, depth = 0) {
+    if (net == null || depth > 3) return undefined;
+    if (sim.nets.hasGnd(net)) return 0;
+    if (sim.nets.hasVcc(net)) return 1;
+    for (const m of members(net)) {
+      const d = P[m.part.type];
+      if (d.kind === 'hbridge') { const v = hbridgeOut(m.part, m.pin); if (v !== undefined) return v; }
+      if (d.kind === 'relay') { // follow a closed relay contact to its common terminal
+        const k = /^(NO|NC)(\d)$/.exec(m.pin); if (!k) continue;
+        const on = netLevel(netOf(m.part, 'COIL1')) === 1 && netLevel(netOf(m.part, 'COIL2')) !== 1;
+        if ((k[1] === 'NO') === on) { const v = driveOf(netOf(m.part, 'COM' + k[2]), depth + 1); if (v !== undefined) return v; }
+      }
+    }
+    const lv = netLevel(net);
+    if (lv === undefined) return undefined;
+    return lv ? pwmOf(net) : 0;
+  }
+  sim.motorSpeed = function (p) {
+    const a = driveOf(netOf(p, 'M+')), b = driveOf(netOf(p, 'M-'));
+    if (a === undefined || b === undefined) return 0;
+    return clamp(a - b, -1, 1);
+  };
+
+  /* ---------- steppers ---------- */
+  const HALF = ['1000', '1100', '0100', '0110', '0010', '0011', '0001', '1001'];
+  function turnStepper(p, deg) {
+    const q = st(p); q.angle = (q.angle || 0) + deg;
+    const e = el(p); if (e && p.type === 'stepper-motor') e.angle = ((q.angle % 360) + 360) % 360;
+  }
+  // a pin changed: coil patterns on a ULN2003, or a STEP pulse into an A4988
+  sim.pinWritten = function (dev, g, old, v) {
+    const n = gpioNetOf(dev, g); if (n == null) return;
+    members(n).forEach((m) => {
+      const d = P[m.part.type];
+      if (m.part.type === 'iotf-28byj48' && /^IN\d$/.test(m.pin) && powered(m.part)) {
+        const pat = ['IN1', 'IN2', 'IN3', 'IN4'].map((x) => (netLevel(netOf(m.part, x)) === 1 ? '1' : '0')).join(''), i = HALF.indexOf(pat), q = st(m.part);
+        if (i >= 0) { if (q.ph !== undefined) { const dd = (i - q.ph + 8) % 8; if (dd && dd <= 2) turnStepper(m.part, dd * 360 / 4096); else if (dd >= 6) turnStepper(m.part, -(8 - dd) * 360 / 4096); } q.ph = i; }
+      }
+      if (d.kind === 'a4988' && m.pin === 'STEP' && !old && v && powered(m.part)) a4988Step(m.part);
+    });
+  };
+  function a4988Step(a) {
+    if (netLevel(netOf(a, 'EN')) === 1) return; // EN is active LOW
+    const ms = ['MS1', 'MS2', 'MS3'].map((x) => (netLevel(netOf(a, x)) === 1 ? 1 : 0)).join('');
+    const div = { '000': 1, '100': 2, '010': 4, '110': 8, '111': 16 }[ms] || 1;
+    const dir = netLevel(netOf(a, 'DIR')) === 1 ? 1 : -1;
+    const motor = stepperOfDriver(a);
+    if (motor) turnStepper(motor, dir * 1.8 / div);
+  }
+  function stepperOfDriver(a) {
+    const outs = ['1A', '1B', '2A', '2B'].map((x) => netOf(a, x)).filter((x) => x != null);
+    const list = partsOfKind(['stepper']).filter((p) => p.type === 'stepper-motor');
+    return list.find((p) => ['A-', 'A+', 'B+', 'B-'].some((x) => outs.includes(netOf(p, x)))) || list[0] || null;
+  }
+  sim.a4988Step = a4988Step; sim.turnStepper = turnStepper; sim.stepperOfDriver = stepperOfDriver;
+
   // voltage on a net, in volts
   function netVoltageDev(net, dev) {
     const B = (dev || sim.devices[0]).bd, V = B.vref;
@@ -238,6 +307,24 @@
         case 'gps': { const c = e.q && e.q('.fix'); if (c) c.setAttribute('fill', on && p.sim.sats >= 3 && (performance.now() % 1000) < 120 ? '#ff3b30' : '#5a1a17'); break; }
         case 'loadcell': { const t = e.q && e.q('.kg'); if (t) t.textContent = p.sim.weight + ' g'; break; }
         case 'hx711': { const lc = partsOfKind(['loadcell'])[0]; if (lc) p.sim.weight = lc.sim.weight; break; }
+        case 'dcmotor': {
+          const sp = on ? sim.motorSpeed(p) : 0, q = st(p), t = performance.now(), dt = Math.min(100, t - (q.t || t)); q.t = t; q.speed = sp;
+          if (p.type === 'iotf-dcmotor') {
+            q.rot = ((q.rot || 0) + sp * dt * 0.72) % 360; // shown slower than 200 RPM so it can be followed
+            const r = e.q && e.q('.rotor'); if (r) r.setAttribute('transform', `rotate(${q.rot.toFixed(1)} 62 75)`);
+            const tx = e.q && e.q('.rpm'), rpm = Math.round(Math.abs(sp) * (d.rpm || 200));
+            if (tx) { const s2 = rpm ? `${sp < 0 ? '◀ ' : ''}${rpm} RPM${sp > 0 ? ' ▶' : ''}` : '0 RPM'; if (tx.textContent !== s2) tx.textContent = s2; }
+          } else if (p.type === 'iotf-pump') {
+            const w = e.q && e.q('.water'); if (w) w.setAttribute('opacity', Math.abs(sp) > 0.15 ? (0.5 + 0.5 * Math.abs(Math.sin(t / 120))).toFixed(2) : 0);
+          } else if (p.type === 'iotf-vibmotor') {
+            const g2 = e.q && e.q('.shake'); if (g2) g2.setAttribute('transform', Math.abs(sp) > 0.15 ? `translate(${(Math.sin(t / 18) * 3 * Math.abs(sp)).toFixed(1)} ${(Math.cos(t / 23) * 2 * Math.abs(sp)).toFixed(1)})` : '');
+          }
+          break;
+        }
+        case 'stepper': if (p.type === 'iotf-28byj48' && e.q) {
+          const r = e.q('.rotor'); if (r) r.setAttribute('transform', `rotate(${(((st(p).angle || 0) % 360) + 360) % 360} 140 50)`);
+          ['IN1', 'IN2', 'IN3', 'IN4'].forEach((x, i) => { const c = e.q('.ph' + i); if (c) c.setAttribute('fill', on && netLevel(netOf(p, x)) === 1 ? '#ff3b30' : '#4a1414'); });
+        } break;
         case 'flow': { const r = e.q && e.q('.rotor'); if (r) { const a = ((st(p).rot || 0) + (on ? p.sim.flow * 1.2 : 0)) % 360; st(p).rot = a; r.setAttribute('transform', `rotate(${a} 104 78)`); } break; }
         case 'oximeter': { const r = e.q && e.q('.beat'); if (r) r.setAttribute('fill', on && p.sim.finger && heartWave(p.sim.bpm) > 0.5 ? '#ff3b30' : '#3a0d0d'); break; }
       }
@@ -355,9 +442,10 @@
       const g = toGpio(pin), o = dev.out[g] || (dev.out[g] = { mode: 0, v: 0 });
       const v = val ? 1 : 0;
       if (o.mode !== 1) { o.pull = !!v; if (!dev.pinModeHint.has(g)) { dev.pinModeHint.add(g); warn('pm' + g, `digitalWrite(${pin}) ก่อนเรียก pinMode(${pin}, OUTPUT) ขาจะยังไม่เป็นเอาต์พุต`); } return; }
-      o.v = v;
+      const old = o.v; o.v = v;
       const n = gpioNet(g);
       if (n && v && sim.nets.hasGnd(n)) warn('sh' + g, `ขา ${pin} สั่ง HIGH แต่ต่อลง GND ตรง ๆ (ลัดวงจร)`);
+      if (old !== v) sim.pinWritten(dev, g, old, v);
     };
     env.digitalRead = (pin) => readPin(toGpio(pin));
     env.analogRead = (pin) => {
@@ -923,20 +1011,64 @@
     };
 
     // --- Stepper
+    // the stepper (or ULN2003 board) whose input pins are on these gpios
+    const stepperOn = (pins) => {
+      const nets = pins.filter((x) => x !== undefined).map((x) => gpioNet(toGpio(x))).filter((x) => x != null);
+      const list = mine(['stepper']);
+      return list.find((p) => (P[p.type].tag === 'iotf-28byj48' ? ['IN1', 'IN2', 'IN3', 'IN4'] : ['A-', 'A+', 'B+', 'B-']).some((x) => nets.includes(netOf(p, x)))) || list[0] || null;
+    };
     env.Stepper = class {
-      constructor(steps) { this.steps = steps || 200; this.rpm = 10; this.p = mine(['stepper'])[0]; this.angle = 0; }
+      constructor(steps, ...pins) { this.steps = steps || 200; this.rpm = 10; this.p = stepperOn(pins); if (!this.p) warn('stepper', 'ไม่พบสเต็ปเปอร์มอเตอร์ในวงจร'); }
       setSpeed(r) { this.rpm = r || 1; }
       async step(n) {
-        const ms = Math.abs(n) * 60000 / (this.steps * this.rpm), e = this.p && el(this.p), dir = Math.sign(n), each = 360 / this.steps;
-        const t0 = performance.now(), a0 = this.angle;
+        n = Math.trunc(n); if (!n) return;
+        const ms = Math.abs(n) * 60000 / (this.steps * this.rpm), dir = Math.sign(n), each = 360 / this.steps;
+        const t0 = performance.now(); let done = 0;
         while (true) {
-          const k = Math.min(1, (performance.now() - t0) / Math.max(1, ms));
-          this.angle = a0 + dir * Math.abs(n) * each * k;
-          if (e && powered(this.p)) e.angle = ((this.angle % 360) + 360) % 360;
+          const k = Math.min(1, (performance.now() - t0) / Math.max(1, ms)), want = Math.floor(Math.abs(n) * k);
+          if (this.p && powered(this.p) && want > done) turnStepper(this.p, dir * (want - done) * each);
+          done = want;
           if (k >= 1) break; await env.delay(16);
         }
       }
     };
+    // AccelStepper: DRIVER (STEP/DIR into an A4988) or 4-wire coils
+    env.AccelStepper = class {
+      constructor(mode = 4, p1 = 2, p2 = 3, p3 = 4, p4 = 5) {
+        this.mode = mode; this.pins = [p1, p2, p3, p4]; this.pos = 0; this.target = 0; this.max = 1; this.spd = 0; this.last = performance.now();
+        if (mode === 1) { this.drv = findPart(['a4988'], 'STEP', toGpio(p1)); if (!this.drv) warn('accel', 'AccelStepper (DRIVER) ไม่พบ A4988 ที่ขา STEP ต่อกับขา ' + p1); }
+        else this.p = stepperOn(mode === 2 || mode === 3 ? [p1, p2] : this.pins);
+      }
+      _step(dir) {
+        this.pos += dir;
+        if (this.drv) { if (!powered(this.drv) || netLevel(netOf(this.drv, 'EN')) === 1) return; const m = stepperOfDriver(this.drv); if (m) turnStepper(m, dir * 1.8); return; }
+        if (!this.p || !powered(this.p)) return;
+        const per = P[this.p.type].tag === 'iotf-28byj48' ? (this.mode === 8 ? 4096 : 2048) : (this.mode === 8 ? 400 : 200);
+        turnStepper(this.p, dir * 360 / per);
+      }
+      _go(rate, toward) {
+        const now = performance.now(); if (!rate) { this.last = now; return false; }
+        const interval = 1000 / Math.abs(rate); let k = Math.floor((now - this.last) / interval);
+        if (k <= 0) return true;
+        if (toward !== undefined) k = Math.min(k, Math.abs(toward));
+        const dir = toward !== undefined ? Math.sign(toward) : Math.sign(rate);
+        for (let i = 0; i < k; i++) this._step(dir);
+        this.last = now - (now - this.last) % interval;
+        if (now - this.last > 200) this.last = now;
+        return true;
+      }
+      setMaxSpeed(s) { this.max = Math.abs(s) || 1; } maxSpeed() { return this.max; } setAcceleration() { } setSpeed(s) { this.spd = s; } speed() { return this.spd; }
+      moveTo(t) { if (this.target !== t) this.last = performance.now(); this.target = Math.trunc(t); } move(r) { this.moveTo(this.pos + r); }
+      currentPosition() { return this.pos; } targetPosition() { return this.target; } distanceToGo() { return this.target - this.pos; }
+      setCurrentPosition(p) { this.pos = this.target = Math.trunc(p); } stop() { this.target = this.pos; } isRunning() { return this.target !== this.pos; }
+      run() { const d = this.target - this.pos; if (!d) return false; this._go(this.max, d); return this.target !== this.pos; }
+      runSpeed() { return this._go(this.spd); }
+      runSpeedToPosition() { const d = this.target - this.pos; if (!d) return false; return this._go(this.spd || this.max, d); }
+      async runToPosition() { while (this.run()) await env.delay(2); }
+      async runToNewPosition(p) { this.moveTo(p); await this.runToPosition(); }
+      enableOutputs() { } disableOutputs() { } setEnablePin() { } setPinsInverted() { } setMinPulseWidth() { }
+    };
+    Object.assign(env.AccelStepper, { FUNCTION: 0, DRIVER: 1, FULL2WIRE: 2, FULL3WIRE: 3, FULL4WIRE: 4, HALF3WIRE: 6, HALF4WIRE: 8 });
 
     // --- IR remote (IRremote v3+ and v2 API)
     const ir = { q: [] };
@@ -1326,6 +1458,7 @@
           if (d.kind === 'lcd') { e.characters = new Uint8Array(p.type === 'lcd2004' ? 80 : 32).fill(32); e.backlight = false; e.cursor = e.blink = false; }
           if (d.kind === 'oled' && e.imageData) { e.imageData.data.fill(0); e.redraw && e.redraw(); }
           if (d.kind === 'relay') ed.els[p.id].wrap.classList.remove('energized');
+          if (d.kind === 'dcmotor') { st(p).speed = 0; const tx = e.q && e.q('.rpm'); if (tx) tx.textContent = '0 RPM'; const w = e.q && e.q('.water'); if (w) w.setAttribute('opacity', 0); const g = e.q && e.q('.shake'); if (g) g.setAttribute('transform', ''); }
           if (d.kind === 'relay4') for (let i = 1; i <= 4; i++) { const c = e.q('.ch' + i); if (c) c.setAttribute('fill', '#4a1414'); }
         } catch (err) { /* ignore */ }
       });

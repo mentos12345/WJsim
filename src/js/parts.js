@@ -1,6 +1,6 @@
 /* WJSIM — parts registry
  * 50 parts come from wokwi-elements (MIT, (c) 2020 Uri Shaked).
- * 26 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay and 19 sensors) are original drawings (MIT, WJSIM contributors).
+ * 33 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay, 19 sensors, 7 motors/drivers) are original drawings (MIT, WJSIM contributors).
  */
 window.IOTF = window.IOTF || {};
 (function () {
@@ -312,6 +312,107 @@ window.IOTF = window.IOTF || {};
     }
   });
 
+  /* ---------- motors and drivers drawn for WJSIM ---------- */
+  const sig = (names, x, y0, dy, power = {}) => names.map((n, i) => ({ name: n, x, y: y0 + i * dy, power: power[n] || null }));
+  const term = (x, y) => `<rect x="${x - 9}" y="${y - 9}" width="18" height="18" rx="2" fill="#2f6fd6"/><circle cx="${x}" cy="${y}" r="5" fill="#c9ced4"/><path d="M${x - 3} ${y}h6" stroke="#666" stroke-width="1.5"/>`;
+  const leadPins = (pins, cols) => pins.map((p, i) => `<path d="M${p.x - 34} ${p.y}h30" stroke="${cols[i]}" stroke-width="4" stroke-linecap="round"/>` + `<rect x="${p.x - 8}" y="${p.y - 3}" width="12" height="6" fill="#d4b44a"/>` + t(p.x - 14, p.y - 6, 7, p.name, '#ddd', 'end')).join('');
+  Object.assign(CUSTOM, {
+    'iotf-dcmotor': {
+      w: 250, h: 150, scale: 0.62,
+      pins: sig(['M+', 'M-'], 242, 62, 26),
+      svg() {
+        let b = '<circle cx="62" cy="75" r="58" fill="#2b2b2b" stroke="#555" stroke-width="3"/><circle cx="62" cy="75" r="46" fill="#3a3a3a"/>';
+        b += '<g class="rotor" transform="rotate(0 62 75)">';
+        for (let i = 0; i < 6; i++) b += `<path d="M62 75L${62 + 40 * Math.cos(i * Math.PI / 3)} ${75 + 40 * Math.sin(i * Math.PI / 3)}" stroke="#f0c419" stroke-width="7" stroke-linecap="round"/>`;
+        b += '<circle cx="102" cy="75" r="5" fill="#e87d0d"/></g><circle cx="62" cy="75" r="11" fill="#f0c419" stroke="#b38f0f" stroke-width="2"/>';
+        b += '<rect x="112" y="40" width="90" height="70" rx="10" fill="#f0c419" stroke="#b38f0f" stroke-width="2"/><rect x="196" y="54" width="20" height="42" rx="4" fill="#c9ced4"/>';
+        b += t(157, 80, 10, 'TT MOTOR', '#6b5208', 'middle', 'bold') + '<text class="rpm" x="157" y="128" font-size="11" fill="#9aa0a6" text-anchor="middle">0 RPM</text>';
+        b += this.pins.map((p) => `<path d="M216 ${p.y}h${p.x - 220}" stroke="${p.name === 'M+' ? '#d32f2f' : '#222'}" stroke-width="4"/>` + pad(p.x, p.y, 3.5) + t(p.x - 4, p.y - 7, 8, p.name, '#ddd', 'end')).join('');
+        return b;
+      }
+    },
+    'iotf-pump': {
+      w: 230, h: 140, scale: 0.62,
+      pins: sig(['M+', 'M-'], 222, 54, 26),
+      svg() {
+        let b = '<rect x="20" y="30" width="110" height="80" rx="14" fill="#2b2b2b" stroke="#555" stroke-width="2"/><rect x="34" y="46" width="22" height="48" rx="3" fill="#444"/><rect x="60" y="46" width="22" height="48" rx="3" fill="#444"/><rect x="86" y="46" width="22" height="48" rx="3" fill="#444"/>';
+        b += '<rect x="58" y="4" width="18" height="30" rx="3" fill="#3a3a3a"/><path class="water" d="M67 2c-6 8-6 14 0 14s6-6 0-14z" fill="#4aa3ff" opacity="0"/>';
+        b += t(75, 128, 10, 'WATER PUMP 5V', '#9aa0a6', 'middle', 'bold');
+        b += this.pins.map((p) => `<path d="M130 ${p.y}h${p.x - 134}" stroke="${p.name === 'M+' ? '#d32f2f' : '#222'}" stroke-width="4"/>` + pad(p.x, p.y, 3.5) + t(p.x - 4, p.y - 7, 8, p.name, '#ddd', 'end')).join('');
+        return b;
+      }
+    },
+    'iotf-vibmotor': {
+      w: 170, h: 100, scale: 0.62,
+      pins: sig(['M+', 'M-'], 162, 38, 26),
+      svg() {
+        let b = '<g class="shake"><circle cx="50" cy="50" r="40" fill="#c9ced4" stroke="#8a9099" stroke-width="3"/><circle cx="50" cy="50" r="30" fill="#dfe3e8"/>' + t(50, 54, 9, 'VIB', '#777', 'middle', 'bold') + '</g>';
+        b += this.pins.map((p) => `<path d="M88 ${p.y}h${p.x - 92}" stroke="${p.name === 'M+' ? '#d32f2f' : '#3d3d3d'}" stroke-width="3"/>` + pad(p.x, p.y, 3.5) + t(p.x - 4, p.y - 7, 8, p.name, '#ddd', 'end')).join('');
+        return b;
+      }
+    },
+    'iotf-l298n': {
+      w: 270, h: 250, scale: 0.6,
+      pins: [
+        { name: 'OUT1', x: 12, y: 70 }, { name: 'OUT2', x: 12, y: 100 }, { name: 'OUT3', x: 258, y: 70 }, { name: 'OUT4', x: 258, y: 100 },
+        { name: '12V', x: 60, y: 214, power: 'VCC' }, { name: 'GND', x: 88, y: 214, power: 'GND' }, { name: '5V', x: 116, y: 214 },
+        { name: 'ENA', x: 150, y: 238 }, { name: 'IN1', x: 170, y: 238 }, { name: 'IN2', x: 190, y: 238 }, { name: 'IN3', x: 210, y: 238 }, { name: 'IN4', x: 230, y: 238 }, { name: 'ENB', x: 250, y: 238 }
+      ],
+      svg() {
+        let b = '<rect x="2" y="2" width="266" height="246" rx="8" fill="#c62828"/>';
+        b += '<rect x="80" y="10" width="110" height="90" rx="3" fill="#1d1d1d"/>';
+        for (let i = 0; i < 12; i++) b += `<rect x="${86 + i * 8.6}" y="14" width="5" height="82" fill="#2a2a2a"/>`;
+        b += '<rect x="96" y="104" width="78" height="34" rx="2" fill="#1d1d1d"/>' + t(135, 126, 11, 'L298N', '#ddd', 'middle', 'bold');
+        b += term(22, 70) + term(22, 100) + term(248, 70) + term(248, 100) + term(60, 214) + term(88, 214) + term(116, 214);
+        b += t(22, 50, 8, 'MOTOR A', '#fff', 'middle', 'bold') + t(248, 50, 8, 'MOTOR B', '#fff', 'middle', 'bold');
+        b += '<circle class="pled" cx="40" cy="170" r="4" fill="#4a1414"/><circle cx="214" cy="160" r="15" fill="#2a64c9"/><circle cx="214" cy="160" r="9" fill="#e9ecef"/><rect x="60" y="150" width="34" height="34" rx="16" fill="#1d1d1d"/><rect x="104" y="154" width="26" height="26" rx="12" fill="#1d1d1d"/>';
+        b += '<rect x="140" y="226" width="120" height="18" fill="#1d1d1d"/>';
+        this.pins.forEach((p) => { if (p.y > 200) { b += (p.x > 140 ? pad(p.x, p.y, 3.5) : '') + t(p.x, p.x > 140 ? 222 : 198, 7.5, p.name, '#fff', 'middle', 'bold'); } else b += pad(p.x, p.y, 3) + t(p.x < 100 ? 40 : 230, p.y + 3, 7.5, p.name, '#fff', p.x < 100 ? 'start' : 'end'); });
+        b += '<rect x="141" y="228" width="18" height="14" fill="#1a1a1a" stroke="#e8c84a" stroke-width="1.5"/><rect x="241" y="228" width="18" height="14" fill="#1a1a1a" stroke="#e8c84a" stroke-width="1.5"/>';
+        return b;
+      }
+    },
+    'iotf-l9110s': {
+      w: 230, h: 150, scale: 0.62,
+      pins: [
+        { name: 'A1', x: 12, y: 40 }, { name: 'A2', x: 12, y: 64 }, { name: 'B1', x: 12, y: 92 }, { name: 'B2', x: 12, y: 116 },
+        ...sig(['B-IA', 'B-IB', 'GND', 'VCC', 'A-IA', 'A-IB'], 218, 22, 21, { GND: 'GND', VCC: 'VCC' })
+      ],
+      svg() {
+        let b = '<rect x="2" y="4" width="226" height="142" rx="6" fill="#1f7a3d"/>';
+        b += term(26, 40) + term(26, 64) + term(26, 92) + term(26, 116) + t(48, 54, 8, 'MOTOR A', '#fff', 'start', 'bold') + t(48, 106, 8, 'MOTOR B', '#fff', 'start', 'bold');
+        b += chip(100, 34, 28, 22) + chip(100, 86, 28, 22) + '<circle class="pled" cx="150" cy="18" r="3.5" fill="#4a1414"/>';
+        b += this.pins.filter((p) => p.x > 100).map((p) => pad(p.x, p.y, 3.5) + t(p.x - 9, p.y + 3, 7.5, p.name, '#fff', 'end')).join('') + this.pins.filter((p) => p.x < 100).map((p) => pad(p.x, p.y, 3)).join('');
+        b += t(118, 138, 9, 'L9110S', '#fff', 'middle', 'bold');
+        return b;
+      }
+    },
+    'iotf-28byj48': {
+      w: 230, h: 260, scale: 0.6,
+      pins: sig(['IN1', 'IN2', 'IN3', 'IN4'], 12, 160, 18).concat([{ name: 'GND', x: 12, y: 232, power: 'GND' }, { name: '5V', x: 12, y: 250, power: 'VCC' }]),
+      svg() {
+        let b = '<circle cx="140" cy="62" r="56" fill="#c9ced4" stroke="#8a9099" stroke-width="3"/><circle cx="140" cy="62" r="44" fill="#b3bac2"/><rect x="80" y="84" width="40" height="34" rx="4" fill="#2f6fd6"/>';
+        b += '<g class="rotor" transform="rotate(0 140 50)"><circle cx="140" cy="50" r="12" fill="#dfe3e8" stroke="#8a9099" stroke-width="2"/><rect x="137" y="38" width="6" height="24" rx="1" fill="#6b7078"/><circle cx="140" cy="28" r="4" fill="#e87d0d"/></g>';
+        b += '<path d="M100 118C100 140 120 150 160 150" stroke="#e8c84a" stroke-width="3" fill="none"/><path d="M104 118C104 144 122 154 160 154" stroke="#d32f2f" stroke-width="3" fill="none"/>';
+        b += '<rect x="40" y="148" width="180" height="110" rx="6" fill="#1f7a3d"/>' + chip(80, 172, 40, 30);
+        for (let i = 0; i < 4; i++) b += `<circle class="ph${i}" cx="${150 + i * 16}" cy="184" r="5" fill="#4a1414"/>` + t(150 + i * 16, 202, 7, String.fromCharCode(65 + i), '#fff');
+        b += t(130, 244, 9, 'ULN2003 · 28BYJ-48', '#fff', 'middle', 'bold');
+        b += this.pins.map((p) => `<path d="M${p.x} ${p.y}h${38 - p.x}" stroke="#c9ced4" stroke-width="3"/>` + pad(p.x, p.y, 3.5) + t(30, p.y - 4, 7, p.name, '#fff', 'start')).join('');
+        return b;
+      }
+    },
+    'iotf-a4988': {
+      w: 170, h: 200, scale: 0.6,
+      pins: sig(['EN', 'MS1', 'MS2', 'MS3', 'RST', 'SLP', 'STEP', 'DIR'], 12, 22, 22).concat(sig(['VMOT', 'GND', '2B', '2A', '1A', '1B', 'VDD', 'GND.2'], 158, 22, 22, { VMOT: 'VCC', GND: 'GND', VDD: 'VCC', 'GND.2': 'GND' })),
+      svg() {
+        let b = '<rect x="20" y="6" width="130" height="188" rx="4" fill="#1f7a3d"/><rect x="58" y="64" width="54" height="54" rx="2" fill="#1d1d1d"/><rect x="66" y="72" width="38" height="38" fill="#2a2a2a"/>';
+        b += '<circle cx="85" cy="150" r="12" fill="#c9ced4" stroke="#8a9099"/><path d="M79 150h12" stroke="#666" stroke-width="2"/>' + t(85, 46, 11, 'A4988', '#fff', 'middle', 'bold');
+        b += this.pins.map((p) => pad(p.x, p.y, 3.5) + t(p.x < 50 ? p.x + 12 : p.x - 12, p.y + 3, 7.5, p.name.replace('.2', ''), '#fff', p.x < 50 ? 'start' : 'end')).join('');
+        return b;
+      }
+    }
+  });
+
   class IotfPart extends HTMLElement {
     connectedCallback() {
       if (this._init) return;
@@ -477,6 +578,14 @@ window.IOTF = window.IOTF || {};
 
   // motors
   def('servo', { name: 'Servo Motor', cat: 'มอเตอร์', kind: 'servo', level: 'basic', sig: [['PWM', 'pwm']] });
+  const mot = (key, o) => def(key, Object.assign({ tag: key, cat: 'มอเตอร์', level: 'basic' }, o));
+  mot('iotf-dcmotor', { name: 'มอเตอร์ DC (TT มีเกียร์)', kind: 'dcmotor', rpm: 200 });
+  mot('iotf-pump', { name: 'ปั๊มน้ำ DC 5V', kind: 'dcmotor', rpm: 0 });
+  mot('iotf-vibmotor', { name: 'มอเตอร์สั่น', kind: 'dcmotor', rpm: 0 });
+  mot('iotf-l298n', { name: 'ไดรเวอร์มอเตอร์ L298N', kind: 'hbridge', optional: ['OUT1', 'OUT2', 'OUT3', 'OUT4', '5V', 'ENA', 'ENB', 'IN1', 'IN2', 'IN3', 'IN4'] });
+  mot('iotf-l9110s', { name: 'ไดรเวอร์มอเตอร์ L9110S', kind: 'hbridge', optional: ['A1', 'A2', 'B1', 'B2', 'A-IA', 'A-IB', 'B-IA', 'B-IB'] });
+  mot('iotf-28byj48', { name: 'สเต็ปเปอร์ 28BYJ-48 + ULN2003', kind: 'stepper', stepsPerRev: 2048, optional: [] });
+  mot('iotf-a4988', { name: 'ไดรเวอร์สเต็ปเปอร์ A4988', kind: 'a4988', level: 'advanced', optional: ['EN', 'MS1', 'MS2', 'MS3', 'RST', 'SLP', '1A', '1B', '2A', '2B'] });
   def('stepper-motor', { name: 'Stepper Motor', cat: 'มอเตอร์', kind: 'stepper', attrs: { size: 17 } });
   def('biaxial-stepper', { name: 'Biaxial Stepper', cat: 'มอเตอร์', kind: 'biaxial' });
 

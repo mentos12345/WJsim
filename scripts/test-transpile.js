@@ -12,6 +12,8 @@ for (const t of IOTF.TEMPLATES) {
 const cases = [
   ['await before member access', 'String f(String a){ return a; }\nvoid setup(){}\nvoid loop(){ float x = f(f("1").substring(0)).toFloat(); }', '(await f((await f("1")).substring(0))).toFloat()'],
   ['struct init', 'typedef struct { int a; float b; } M;\nM m = {1, 2.5};\nvoid setup(){}\nvoid loop(){}', 'Object.assign(new M(), {a: 1, b: 2.5})'],
+  ['number suffixes', 'void setup(){ long a = 2048L; unsigned long b = 1000UL; int c = 0xFFul; float d = 1.5f; float e = .5f; byte f = 0xEF; }\nvoid loop(){}', 'let a = __int(2048); let b = __int(1000); let c = __int(0xFF); let d = 1.5; let e = .5; let f = __int(0xEF);'],
+  ['AccelStepper::DRIVER', '#include <AccelStepper.h>\nAccelStepper s(AccelStepper::DRIVER, 2, 3);\nvoid setup(){}\nvoid loop(){ s.runToPosition(); }', 'await s.runToPosition()'],
   ['PMS::DATA', '#include <PMS.h>\nPMS pms(Serial2);\nPMS::DATA d;\nvoid setup(){}\nvoid loop(){ pms.read(d); }', 'new PMS_DATA()'],
 ];
 for (const [name, src, want] of cases) {

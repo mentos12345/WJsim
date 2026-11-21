@@ -318,6 +318,11 @@
     if (!b) { out.push({ lvl: 'err', msg: 'ยังไม่มีบอร์ด ลากบอร์ด (เช่น ESP32) ลงมาก่อน' }); return out; }
     const nets = ed.nets(), basic = ed.isBasic();
     if (nets.short()) out.push({ lvl: 'err', msg: 'ไฟลัดวงจร: ขา VCC ต่อถึง GND โดยตรง ระวังบอร์ดเสียหาย' });
+    // motors straight on a board pin: the pin cannot supply that much current
+    ed.project.parts.filter((p) => P[p.type].kind === 'dcmotor').forEach((p) => {
+      const direct = ['M+', 'M-'].some((x) => { const n = nets.netOf(p.id, x); return n != null && nets.boardPinsOn(n).length && !ed.project.parts.some((q) => P[q.type].kind === 'hbridge' && (ed.els[q.id] ? ed.els[q.id].el.pinInfo || [] : []).some((pi) => nets.netOf(q.id, pi.name) === n)); });
+      if (direct) out.push({ lvl: 'warn', msg: `${P[p.type].name}: ต่อตรงกับขาบอร์ด ของจริงขาบอร์ดจ่ายไฟให้มอเตอร์ไม่พอ ควรต่อผ่านไดรเวอร์ L298N / L9110S หรือรีเลย์` });
+    });
     ed.project.parts.forEach((p) => {
       if (p === b || ed.isBoard(p)) return;
       const d = P[p.type], name = d.name, info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
