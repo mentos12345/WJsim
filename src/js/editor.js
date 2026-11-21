@@ -755,10 +755,18 @@
     return best;
   }
   // clicking a part lights up every wire it is connected to and labels the pins at the other end
+  // highlighted wires are copied into a layer above the parts, so wires running under a board still show
+  function liftWires(svg, ids, extra) {
+    const top = $('selLayer'); if (!top) return;
+    let h = '';
+    ids.forEach((id) => { const el = svg.querySelector(`.wire[data-wl="${id}"]`); if (el) h += `<path class="liftwire" d="${el.getAttribute('d')}" stroke="${el.getAttribute('stroke')}"/>`; });
+    top.innerHTML = h + (extra || '');
+  }
   function showSelectionNets() {
     const svg = $('wires'); if (!svg) return;
     svg.querySelectorAll('.wire.hl').forEach((x) => x.classList.remove('hl'));
     const old = svg.querySelector('.selpins'); if (old) old.remove();
+    liftWires(svg, []);
     const p = ed.sel && ed.part(ed.sel);
     if (!p || !ed.els[p.id]) { svg.classList.remove('dim'); return; }
     const nets = ed.nets(), info = ed.els[p.id].el.pinInfo || [];
@@ -777,17 +785,23 @@
       g += `<circle class="selring ${own ? 'own' : ''}" cx="${q.x}" cy="${q.y}" r="5"/>`;
       const other = ed.part(e.p);
       if (!isB && ed.isBoard(other)) { // name the board pin each wire lands on
-        const label = e.pin;
+        const label = e.pin.replace(/\.\d+$/, '');
         const wdt = label.length * 5.6 + 10, n = ed.els[other.id];
-        const left = n && q.x < other.x + ((other.rot || 0) % 180 ? n.h : n.w) / 2; // tag on the outer side of the board
-        let x = left ? q.x - 8 - wdt : q.x + 8, y = q.y - 7;
-        const hit = (yy) => tags.some((r) => Math.abs(r.x - x) < wdt && Math.abs(r.y - yy) < 15);
-        y = [0, -15, 15, -30, 30, -45, 45].map((d) => y + d).find((yy) => !hit(yy)) ?? y;
-        tags.push({ x, y });
+        // put the tag outside the board, on the side nearest to the pin
+        const bw = n ? ((other.rot || 0) % 180 ? n.h : n.w) : 0, bh = n ? ((other.rot || 0) % 180 ? n.w : n.h) : 0;
+        const dist = { l: q.x - other.x, r: other.x + bw - q.x, t: q.y - other.y, b: other.y + bh - q.y };
+        const side = Object.keys(dist).reduce((a, k) => (dist[k] < dist[a] ? k : a), 'l');
+        let x = side === 'l' ? q.x - 9 - wdt : side === 'r' ? q.x + 9 : q.x - wdt / 2, y = side === 't' ? q.y - 24 : side === 'b' ? q.y + 10 : q.y - 7;
+        const hit = (xx, yy) => tags.some((r) => xx < r.x + r.w + 2 && r.x < xx + wdt + 2 && Math.abs(r.y - yy) < 15);
+        const steps = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+        const spot = side === 't' || side === 'b' ? steps.map((k) => [x + k * (wdt + 3), y]).concat(steps.map((k) => [x, y + (side === 't' ? -15 : 15) * Math.abs(k)])) : steps.map((k) => [x, y + k * 15]);
+        [x, y] = spot.find(([xx, yy]) => !hit(xx, yy)) || [x, y];
+        tags.push({ x, y, w: wdt });
+        if (side === 't' || side === 'b') g += `<path class="taglead" d="M${q.x} ${q.y}L${x + wdt / 2} ${side === 't' ? y + 14 : y}"/>`;
         g += `<g class="seltag" transform="translate(${x} ${y})"><rect width="${wdt}" height="14" rx="4"/><text x="5" y="10.5">${label.replace(/[&<>]/g, '')}</text></g>`;
       }
     }));
-    svg.insertAdjacentHTML('beforeend', `<g class="selpins">${g}</g>`);
+    liftWires(svg, wires.map((w) => w.id), `<g class="selpins">${g}</g>`);
   }
   function highlightNet(wid) {
     const svg = $('wires');
@@ -796,7 +810,9 @@
     svg.classList.toggle('dim', !!wid);
     const w = ed.project.wires.find((x) => x.id === wid); if (!w) return;
     const nets = ed.nets(), n = nets.netOf(w.a.p, w.a.pin);
-    ed.project.wires.forEach((x) => { if (nets.netOf(x.a.p, x.a.pin) === n) { const el = svg.querySelector(`.wire[data-wl="${x.id}"]`); if (el) el.classList.add('hl'); } });
+    const ids = ed.project.wires.filter((x) => nets.netOf(x.a.p, x.a.pin) === n).map((x) => x.id);
+    ids.forEach((id) => { const el = svg.querySelector(`.wire[data-wl="${id}"]`); if (el) el.classList.add('hl'); });
+    liftWires(svg, ids);
   }
 
   /* ---------- automatic wire routing (A* on a grid, avoids parts, spreads parallel wires) ---------- */

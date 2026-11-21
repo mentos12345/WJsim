@@ -51,7 +51,8 @@ input:focus,select:focus{outline:1px solid var(--sel);border-color:var(--sel)}
 #stage{position:relative;overflow:hidden;background:#232323;background-image:radial-gradient(#3a3a3a 1px,transparent 1px);background-size:20px 20px;min-width:0}
 #stage.panning{cursor:grabbing}
 #world{position:absolute;left:0;top:0;transform-origin:0 0}
-#wires,#wireOverlay{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible}
+#wires,#wireOverlay,#selLayer{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible}
+#selLayer{pointer-events:none}
 #wireOverlay{pointer-events:none}
 #partsLayer,#bbLayer{position:absolute;left:0;top:0}
 .part{position:absolute;left:0;top:0;transform-origin:0 0}
@@ -178,11 +179,11 @@ li.CodeMirror-hint-active{background:#3b2a16;color:#fff}
 li.CodeMirror-hint-active .ac-detail{color:#c9b39a}
 
 /* selected part: its wires and the pins at both ends */
-#wires .selring{fill:none;stroke:#ffd166;stroke-width:2;pointer-events:none}
-#wires .selring.own{stroke:#fff}
-#wires .seltag{pointer-events:none}
-#wires .seltag rect{fill:#ffd166;stroke:#1b1c20;stroke-width:1}
-#wires .seltag text{font:700 9.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#1b1c20}
+#selLayer .selring{fill:none;stroke:#ffd166;stroke-width:2;pointer-events:none}
+#selLayer .selring.own{stroke:#fff}
+#selLayer .seltag{pointer-events:none}
+#selLayer .seltag rect{fill:#ffd166;stroke:#1b1c20;stroke-width:1}
+#selLayer .seltag text{font:700 9.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#1b1c20}
 
 /* save button */
 .savebtn{display:flex;align-items:center;gap:6px;background:#3a3a3a;border:1px solid #4a4a4a;border-radius:6px;padding:4px 11px;cursor:pointer;white-space:nowrap}
@@ -310,3 +311,10 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 .part.bboard .pin:hover{background:var(--or);border-color:#fff}
 .part.bboard .pin.strip{background:rgba(232,125,13,.55);border-color:rgba(232,125,13,.9)}
 .part.bboard .pin.used{background:#3ddc84;border-color:#1c7a43}
+
+/* a selected part's wires, drawn above the parts */
+#selLayer .liftwire{fill:none;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 3px rgba(255,255,255,.55))}
+@keyframes liftflow{to{stroke-dashoffset:-18}}
+#selLayer .liftwire{stroke-dasharray:10 8;animation:liftflow .6s linear infinite}
+@media (prefers-reduced-motion:reduce){#selLayer .liftwire{animation:none;stroke-dasharray:none}}
+#selLayer .taglead{stroke:#ffd166;stroke-width:1.2;fill:none}
