@@ -531,6 +531,28 @@
     }
     return d;
   }
+  // round the corners of a path made of straight segments (M/L/H/V), like a bent wire
+  function roundCorners(d, r = 7) {
+    const pts = []; let x = 0, y = 0;
+    d.replace(/([MLHV])\s*([-\d.e]+)(?:[ ,]+([-\d.e]+))?/g, (m, c, a, b) => {
+      if (c === 'M' || c === 'L') { x = +a; y = +b; } else if (c === 'H') x = +a; else y = +a;
+      const last = pts[pts.length - 1]; if (!last || Math.hypot(last.x - x, last.y - y) > 1.5) pts.push({ x, y });
+      return m;
+    });
+    // drop points in the middle of a straight run
+    for (let i = pts.length - 2; i > 0; i--) { const a = pts[i - 1], b = pts[i], c = pts[i + 1]; if (Math.abs((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)) < 1) pts.splice(i, 1); }
+    if (pts.length < 3) return `M${pts[0].x} ${pts[0].y}` + pts.slice(1).map((q) => `L${q.x} ${q.y}`).join('');
+    let out = `M${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+      const l1 = Math.hypot(p1.x - p0.x, p1.y - p0.y), l2 = Math.hypot(p2.x - p1.x, p2.y - p1.y), k = Math.min(r, l1 / 2, l2 / 2);
+      if (k < 0.5) { out += `L${p1.x} ${p1.y}`; continue; }
+      const ax = p1.x + (p0.x - p1.x) * k / l1, ay = p1.y + (p0.y - p1.y) * k / l1, bx = p1.x + (p2.x - p1.x) * k / l2, by = p1.y + (p2.y - p1.y) * k / l2;
+      out += `L${ax.toFixed(1)} ${ay.toFixed(1)}Q${p1.x} ${p1.y} ${bx.toFixed(1)} ${by.toFixed(1)}`;
+    }
+    const e = pts[pts.length - 1];
+    return out + `L${e.x} ${e.y}`;
+  }
   ed.wirePath = wirePath;
   function renderWires() {
     const svg = $('wires'); if (!svg) return;
@@ -538,7 +560,7 @@
     ed.project.wires.forEach((w) => {
       const a = ed.pinPos(w.a.p, w.a.pin), b = ed.pinPos(w.b.p, w.b.pin);
       if (!a || !b) return;
-      const d = wirePath(w, a, b);
+      const raw = wirePath(w, a, b), d = /[CQ]/.test(raw) ? raw : roundCorners(raw);
       h += `<path class="wire ${w.auto && !(w.points || []).length ? 'auto' : ''} ${ed.selWire === w.id ? 'sel' : ''}" data-wl="${w.id}" d="${d}" stroke="${w.color}"/><path class="wirehit" data-w="${w.id}" d="${d}"><title>${w.a.pin} ↔ ${w.b.pin} · ลากเพื่อดัดสาย</title></path>`;
       if (ed.selWire === w.id && !ed.running) {
         const pts = [a].concat(w.points || []).concat([b]);
@@ -608,7 +630,7 @@
     wrap.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       const pinEl = e.target.closest('.pin');
-      if (pinEl && !ed.running) { e.stopPropagation(); clickPin(p.id, pinEl.dataset.pin); return; }
+      if (pinEl && !ed.running) { e.stopPropagation(); clickPin(p.id, pinEl.dataset.pin, e); return; }
       if (ed.running) { select(p.id, true); return; }
       if (!e.target.classList.contains('hit')) return;
       e.stopPropagation();
@@ -628,19 +650,44 @@
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
     }, true);
   }
-  function clickPin(id, pin) {
-    if (!ed.armed) { ed.armed = { p: id, pin }; highlightArmed(); return; }
+  // like Tinkercad: click a pin, click the canvas to add bends, click the other pin (or drag pin to pin)
+  function clickPin(id, pin, ev) {
+    if (!ed.armed) {
+      ed.armed = { p: id, pin, bends: [] }; highlightArmed();
+      if (ev) { // pressing and dragging to another pin also makes the wire
+        const sx = ev.clientX, sy = ev.clientY;
+        const up = (u) => {
+          window.removeEventListener('pointerup', up, true);
+          if (!ed.armed || Math.hypot(u.clientX - sx, u.clientY - sy) < 8) return;
+          const t = pinAt(u.clientX, u.clientY);
+          if (t && !(t.p === ed.armed.p && t.pin === ed.armed.pin)) { u.stopPropagation(); finishWire(t.p, t.pin); }
+        };
+        window.addEventListener('pointerup', up, true);
+      }
+      return;
+    }
     if (ed.armed.p === id && ed.armed.pin === pin) { cancelArm(); return; }
-    const a = ed.armed; cancelArm();
-    const w = ed.addWire(a, { p: id, pin });
-    if (w) { ed.selWire = null; renderWires(); }
+    finishWire(id, pin);
   }
+  function finishWire(id, pin) {
+    const a = { p: ed.armed.p, pin: ed.armed.pin }, bends = ed.armed.bends || [];
+    cancelArm();
+    const w = ed.addWire(a, { p: id, pin });
+    if (w) { if (bends.length) { w.points = bends.map((q) => ({ x: q.x, y: q.y })); } ed.selWire = null; renderWires(); }
+  }
+  // the pin under a screen point, even when a wire is drawn over it
+  function pinAt(x, y) {
+    const el = document.elementsFromPoint(x, y).find((e) => e.classList && e.classList.contains('pin'));
+    if (!el) return null;
+    const part = el.closest('.part'); return part ? { p: part.dataset.id, pin: el.dataset.pin } : null;
+  }
+  ed.pinAt = pinAt;
   function highlightArmed() {
     document.querySelectorAll('.pin.armed').forEach((x) => x.classList.remove('armed'));
     if (!ed.armed) return;
     const n = ed.els[ed.armed.p]; const d = n && [...n.wrap.querySelectorAll('.pin')].find((x) => x.dataset.pin === ed.armed.pin);
     if (d) d.classList.add('armed');
-    hint(`กำลังต่อสายจาก ${ed.armed.pin} — คลิกขาปลายทาง (Esc ยกเลิก)`);
+    hint(`กำลังต่อสายจาก ${ed.armed.pin} — คลิกขาปลายทาง · คลิกพื้นที่ว่างเพื่อหักมุมสาย · Esc หรือคลิกขวาเพื่อยกเลิก`);
   }
   function cancelArm() { ed.armed = null; $('wireOverlay').innerHTML = ''; highlightArmed(); hint(); }
   ed.cancelArm = cancelArm;
@@ -664,6 +711,11 @@
     const st = $('stage');
     st.addEventListener('pointerdown', (e) => {
       if (e.target.closest('#props') || e.target.closest('#stageTools')) return;
+      if (!ed.running) { // wires are drawn over the parts: a pin under a wire still takes the click
+        const t = e.target.closest('.wirehit, .wire') ? pinAt(e.clientX, e.clientY) : null;
+        if (t) { e.stopPropagation(); clickPin(t.p, t.pin, e); return; }
+      }
+      if (e.button === 2 && ed.armed) { cancelArm(); return; }
       const hd = e.target.closest('.wpt, .wmid');
       if (hd && !ed.running) { e.stopPropagation(); dragBend(e, hd.dataset.w, +hd.dataset.i, hd.classList.contains('wmid')); return; }
       const wh = e.target.closest('.wirehit');
@@ -672,7 +724,12 @@
         ed.selWire = wh.dataset.w; select(null, true); ed.selWire = wh.dataset.w; renderWires(); renderProps(); return;
       }
       if (e.target.closest('.part')) return;
-      if (ed.armed) { cancelArm(); return; }
+      if (ed.armed) { // a click on the canvas while drawing adds a bend
+        const c = ed.toWorld(e.clientX, e.clientY), prev = ed.armed.bends.length ? ed.armed.bends[ed.armed.bends.length - 1] : ed.pinPos(ed.armed.p, ed.armed.pin);
+        let x = Math.round(c.x / 4) * 4, y = Math.round(c.y / 4) * 4;
+        if (prev) { if (Math.abs(prev.x - x) < 8) x = prev.x; if (Math.abs(prev.y - y) < 8) y = prev.y; }
+        ed.armed.bends.push({ x, y }); return;
+      }
       if (!ed.running) select(null);
       const sx = e.clientX, sy = e.clientY, px = ed.panX, py = ed.panY;
       st.classList.add('panning');
@@ -698,9 +755,16 @@
     st.addEventListener('pointermove', (e) => {
       if (!ed.armed) return;
       const a = ed.pinPos(ed.armed.p, ed.armed.pin); if (!a) return;
-      const c = ed.toWorld(e.clientX, e.clientY);
-      $('wireOverlay').innerHTML = `<path d="${routePath(a, c)}" stroke="#ff9a3c" stroke-width="2" fill="none" stroke-dasharray="4 3"/>`;
+      let c = ed.toWorld(e.clientX, e.clientY);
+      const t = pinAt(e.clientX, e.clientY); if (t) c = ed.pinPos(t.p, t.pin) || c; // snap the preview to a pin under the cursor
+      const pts = [a].concat(ed.armed.bends);
+      let d = `M${a.x} ${a.y}` + ed.armed.bends.map((q) => `L${q.x} ${q.y}`).join('');
+      const last = pts[pts.length - 1];
+      d += routePath(last, c).replace(/^M[^HVLC]*/, '');
+      $('wireOverlay').innerHTML = `<path d="${roundCorners(d)}" stroke="#ff9a3c" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-dasharray="5 4"/>` +
+        ed.armed.bends.map((q) => `<circle cx="${q.x}" cy="${q.y}" r="3" fill="#ff9a3c"/>`).join('') + (t ? `<circle cx="${c.x}" cy="${c.y}" r="6" fill="none" stroke="#ff9a3c" stroke-width="2"/>` : '');
     });
+    st.addEventListener('contextmenu', (e) => { if (ed.armed) { e.preventDefault(); cancelArm(); } });
     $('wires').addEventListener('pointerover', (e) => { const wh = e.target.closest('.wirehit'); if (wh) highlightNet(wh.dataset.w); });
     $('wires').addEventListener('pointerout', (e) => { if (e.target.closest('.wirehit')) highlightNet(null); });
     st.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY); }, { passive: false });
@@ -760,7 +824,7 @@
   function liftWires(svg, ids, extra) {
     const top = $('selLayer'); if (!top) return;
     let h = '';
-    ids.forEach((id) => { const el = svg.querySelector(`.wire[data-wl="${id}"]`); if (el) h += `<path class="liftwire" d="${el.getAttribute('d')}" stroke="${el.getAttribute('stroke')}"/>`; });
+    // wires are drawn over the parts now, so only the labels go in this layer
     top.innerHTML = h + (extra || '');
   }
   function showSelectionNets() {

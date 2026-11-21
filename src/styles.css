@@ -333,3 +333,9 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 .lerr.ok{color:#6fdc8c}
 #loginForm .foot{display:flex;align-items:center;gap:8px}
 #loginForm .spacer{flex:1}
+
+/* wires sit over the parts (like Tinkercad); the highlighted ones run a dash */
+#wires .wire{stroke-width:2.6}
+#wires.dim .wire.hl{stroke-dasharray:10 7;animation:liftflow .6s linear infinite}
+@media (prefers-reduced-motion:reduce){#wires.dim .wire.hl{animation:none;stroke-dasharray:none}}
+#stage{-webkit-user-select:none;user-select:none}
