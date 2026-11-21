@@ -621,6 +621,88 @@
       }
     };
 
+    // --- IoT Cloud (Arduino Cloud style: ArduinoIoTCloud + Arduino_ConnectionHandler)
+    Object.assign(env, { READ: 1, WRITE: 2, READWRITE: 3, ON_CHANGE: -1, SECONDS: 1, MINUTES: 60, HOURS: 3600, DAYS: 86400,
+      DBG_NONE: -1, DBG_ERROR: 0, DBG_WARNING: 1, DBG_INFO: 2, DBG_DEBUG: 3, DBG_VERBOSE: 4 });
+    env.Permission = { Read: 1, Write: 2, ReadWrite: 3 };
+    env.ArduinoIoTCloudEvent = { CONNECT: 0, SYNC: 1, DISCONNECT: 2 };
+    env.MOST_RECENT_WINS = 0; env.CLOUD_WINS = 1; env.DEVICE_WINS = 2;
+    env.WiFiConnectionHandler = class { constructor(ssid, pass) { this.ssid = String(ssid ?? ''); this.pass = String(pass ?? ''); } getStatus() { return wifi.status === 3 ? 3 : 1; } };
+    env.setDebugMessageLevel = (l) => { dev.cloudDbg = Number(l) || 0; };
+    const IC = IOTF.iotcloud;
+    const cloud = dev.cloud = { props: [], state: 0, evs: {}, began: false };
+    const cloudSay = (t) => { if ((dev.cloudDbg ?? 0) >= 2) { if (!dev.atLineStart) serialWriteDev(dev, '\n'); serialWriteDev(dev, t + '\n'); } };
+    const cloudFire = (ev) => (cloud.evs[ev] || []).forEach((f) => safeCallDev(f, dev));
+    const sameVal = (a, b, delta) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= (delta || 0) && !(delta === 0 && a !== b) : a === b);
+    function cloudConnect() {
+      cloud.state = 2; IC.setConn(dev, 2);
+      IC.log(`<b>${dev.name}</b> เชื่อมต่อคลาวด์แล้ว`);
+      cloudSay('Connected to WJSIM IoT Cloud (Arduino Cloud simulation)');
+      cloud.props.forEach((p) => { p.last = undefined; p.seen = 0; }); // the first update() syncs with the cloud
+      cloudFire(0); cloudFire(1);
+    }
+    env.ArduinoCloud = {
+      begin(conn) {
+        if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว ใช้ ArduinoCloud ไม่ได้ เลือกบอร์ด ESP32 หรือ Nano RP2040 Connect`); return 0; }
+        if (cloud.began) return 1;
+        cloud.began = true; cloud.state = 1; IC.setConn(dev, 1);
+        if (wifi.status !== 3 && wifi.status !== 6) env.WiFi.begin(conn && conn.ssid || 'WJSIM-WiFi', conn && conn.pass || '');
+        const poll = () => {
+          if (!sim.running || !cloud.began) return;
+          if (wifi.status === 3) { sim.timers.push(setTimeout(() => { if (sim.running && cloud.began) cloudConnect(); }, 700)); return; }
+          sim.timers.push(setTimeout(poll, 200));
+        };
+        poll();
+        return 1;
+      },
+      update() {
+        if (cloud.state === 2 && wifi.status !== 3) { cloud.state = 1; IC.setConn(dev, 1); cloudFire(2); cloudSay('Disconnected from Arduino IoT Cloud'); }
+        if (cloud.state !== 2) return;
+        const now = performance.now();
+        cloud.props.forEach((p) => {
+          const c = IC.get(p.name), newer = c && c.ver > (p.seen || 0) && c.src !== dev.id;
+          const local = IC.coerce(p.type, p.get()), changed = p.last === undefined || !sameVal(local, p.last, p.delta);
+          // a new value from the dashboard or another board: take it unless this board has just changed the variable itself
+          // (right after connecting, what the cloud already holds wins)
+          if ((p.perm & 2) && newer && (p.last === undefined || !changed)) {
+            p.seen = c.ver;
+            const v = IC.coerce(p.type, c.v), first = p.last === undefined; p.set(v); p.last = v; p.at = now;
+            if (first && sameVal(v, local, 0)) return; // first sync and nothing differs: no change to report
+            const from = sim.devByBoard[c.src]; if (from && from !== dev) anim(from, dev, 'Cloud', '#00979d');
+            if (p.cb) safeCallDev(p.cb, dev);
+            return;
+          }
+          if (c && c.ver > (p.seen || 0)) p.seen = c.ver;
+          if (!(p.perm & 1)) return;
+          if (p.every > 0 ? now - (p.at ?? -1e9) < p.every * 1000 : !changed) return;
+          p.last = local; p.at = now; IC.set(p.name, local, dev.id, dev.name); p.seen = IC.get(p.name).ver;
+        });
+      },
+      connected: () => (cloud.state === 2 ? 1 : 0),
+      // addProperty(get, set, name, [tag,] permission, policy, callback, minDelta) — the transpiler adds the first three
+      addProperty(get, set, name, ...a) {
+        if (a.length >= 4 && typeof a[2] === 'number' && a[2] !== 0) a.shift(); // old form: (x, tag, permission, policy, callback)
+        const d = IC.find(name);
+        const p = { get, set, name, perm: typeof a[0] === 'number' ? a[0] : 3, every: typeof a[1] === 'number' && a[1] > 0 ? a[1] : 0, cb: typeof a[2] === 'function' ? a[2] : null,
+          delta: typeof a[3] === 'number' ? a[3] : 0, type: d ? d.type : ((v0) => (typeof v0 === 'boolean' ? 'bool' : typeof v0 === 'number' ? 'float' : 'String'))(get()), seen: 0 };
+        if (!d) warnDev(dev, 'cv' + name, `ตัวแปร "${name}" ยังไม่มีในแท็บ คลาวด์ — สร้างตัวแปรชื่อเดียวกันในแท็บ คลาวด์ เพื่อดูค่าบน Dashboard`);
+        cloud.props = cloud.props.filter((x) => x.name !== name).concat(p);
+        const chain = {
+          publishOnChange(delta) { p.every = 0; p.delta = Number(delta) || 0; return chain; },
+          publishEvery(sec) { p.every = Number(sec) || 0; return chain; },
+          onUpdate(fn) { p.cb = fn; return chain; }, onSync() { return chain; }, writeOnDemand() { return chain; }
+        };
+        return chain;
+      },
+      addCallback(ev, fn) { (cloud.evs[ev] = cloud.evs[ev] || []).push(fn); },
+      printDebugInfo() {
+        if (!dev.atLineStart) serialWriteDev(dev, '\n');
+        serialWriteDev(dev, `***** Arduino IoT Cloud - configuration info *****\nDevice ID: wjsim-${dev.id}\nThing ID: thing-${dev.id}\nMQTT Broker: cloud.wjsim.local:8883\n`);
+      },
+      setBoardId() { }, setSecretDeviceKey() { }, setThingId() { }, getThingId: () => 'thing-' + dev.id, push() { cloud.props.forEach((p) => { p.last = undefined; }); },
+      getLocalTime: () => Math.floor(Date.now() / 1000) + 7 * 3600, getInternalTime: () => Math.floor(Date.now() / 1000), updateInternalTimezoneInfo() { }
+    };
+
     // --- DHT
     env.DHT = class {
       constructor(pin, type) { this.pin = toGpio(pin); this.type = type; }
@@ -1408,7 +1490,7 @@
     });
     for (const dev of sim.devices) {
       let t;
-      try { t = IOTF.transpile(dev.code || ''); } catch (e) { reportCompile(dev, e, false); return false; }
+      try { t = IOTF.transpile(IOTF.iotcloud ? IOTF.iotcloud.expand(dev.code || '', dev.id) : dev.code || ''); } catch (e) { reportCompile(dev, e, false); return false; }
       try { dev.fn = await loadProgram(t.code); } catch (e) { reportCompile(dev, e, true); return false; }
       if (gen !== sim.gen) return false;
     }
@@ -1482,6 +1564,7 @@
       if (!quiet) serialWrite('— หยุดจำลอง —\n', 'sinfo');
     }
     if (IOTF.iot && ed.project) IOTF.iot.onRun(false);
+    if (IOTF.iotcloud) IOTF.iotcloud.onRun(false);
     ed.setRunning(false);
   };
   // Serial Monitor input goes to the board whose code is open

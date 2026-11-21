@@ -20,6 +20,7 @@
     connect: '...', publish: 'topic, payload', subscribe: 'topic', setCallback: 'callback', setServer: 'host, port', loop: '',
     readTemperature: '', readHumidity: '', attach: 'pin', on: 'path, handler', send: 'code, type, body', arg: 'name', GET: '', POST: 'body',
     setPixelColor: 'i, r, g, b', show: '', clear: '', display: '', clearDisplay: '', setTextSize: 'n', setTextColor: 'color', drawPixel: 'x, y, color',
+    addProperty: 'variable, READWRITE, ON_CHANGE, onChange', update: '', connected: '', addCallback: 'event, callback', printDebugInfo: '', initProperties: '', setDebugMessageLevel: 'level',
     beginPacket: '...', endPacket: '', parsePacket: '', localIP: '', macAddress: '', status: '', mode: 'mode', backlight: '', init: '',
   };
 
@@ -30,7 +31,7 @@
   const HEADERS = ['Arduino.h', 'WiFi.h', 'esp_now.h', 'WebServer.h', 'HTTPClient.h', 'WiFiUdp.h', 'PubSubClient.h', 'DHT.h', 'Wire.h', 'SPI.h',
     'LiquidCrystal_I2C.h', 'LiquidCrystal.h', 'Adafruit_GFX.h', 'Adafruit_SSD1306.h', 'Adafruit_ILI9341.h', 'Adafruit_NeoPixel.h', 'ESP32Servo.h',
     'Servo.h', 'Adafruit_MPU6050.h', 'Adafruit_Sensor.h', 'HX711.h', 'MFRC522.h', 'TinyGPSPlus.h', 'TinyGPS++.h', 'SoftwareSerial.h', 'RTClib.h',
-    'SD.h', 'Keypad.h', 'Stepper.h', 'IRremote.h', 'IRremote.hpp', 'LoRa.h', 'EEPROM.h', 'ESP8266WiFi.h', 'ESP8266WebServer.h'];
+    'SD.h', 'Keypad.h', 'Stepper.h', 'IRremote.h', 'IRremote.hpp', 'LoRa.h', 'EEPROM.h', 'ESP8266WiFi.h', 'ESP8266WebServer.h', 'thingProperties.h', 'ArduinoIoTCloud.h', 'Arduino_ConnectionHandler.h'];
 
   // $0 marks where the cursor lands
   const SNIPPETS = [
@@ -46,6 +47,7 @@
     ['struct', 'typedef struct {\n  int $0;\n} Message;', ''],
     ['millisTimer', 'static unsigned long last = 0;\nif (millis() - last >= 1000) {\n  last = millis();\n  $0\n}', 'ทำทุก 1 วินาที ไม่บล็อก'],
     ['wifiConnect', 'WiFi.begin("WJSIM-WiFi", "");\nwhile (WiFi.status() != WL_CONNECTED) {\n  delay(200);\n  Serial.print(".");\n}\nSerial.println(WiFi.localIP());$0', 'ต่อ WiFi'],
+    ['cloudSetup', 'initProperties();\nArduinoCloud.begin(ArduinoIoTPreferredConnection);\nsetDebugMessageLevel(2);\nArduinoCloud.printDebugInfo();$0', 'เริ่ม IoT Cloud'],
     ['espnowInit', 'WiFi.mode(WIFI_STA);\nif (esp_now_init() != ESP_OK) {\n  Serial.println("ESP-NOW init failed");\n  return;\n}$0', 'เริ่ม ESP-NOW'],
   ];
 
@@ -167,6 +169,8 @@
       else if (v && typeof v === 'object') all.push(item(k, k, 'const', 'อ็อบเจ็กต์'));
       else all.push(item(k, k, 'const', typeof v === 'number' ? String(v) : ''));
     });
+    // cloud variables declared for this board in thingProperties.h
+    if (IOTF.iotcloud && /thingProperties\.h/.test(text)) IOTF.iotcloud.vars().forEach((v) => all.push(item(v.name, v.name, 'const', 'ตัวแปรคลาวด์ ' + v.type)));
     // words already in this file (variables, own functions)
     const seenWords = new Set();
     const stripped = text.replace(/\/\/.*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"/g, ' ');

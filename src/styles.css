@@ -96,7 +96,7 @@ body.running #wireTools{display:none}
 .badge.warn{background:var(--warn);color:#111}
 .pane{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
 #blocklyDiv{flex:1;min-height:0}
-#pane-dash,#pane-check{padding:8px 10px}
+#pane-dash,#pane-check,#pane-cloud{padding:8px 10px}
 .codebar,.dashbar{display:flex;align-items:center;gap:6px;padding:6px 8px}
 #pane-code .codebar{border-bottom:1px solid #111}
 #codeHost{flex:1;min-height:0;position:relative}
@@ -107,7 +107,7 @@ h4{margin:14px 0 6px;font-size:12px;color:var(--mu);font-weight:600}
 .log{background:var(--field);border:1px solid var(--line);border-radius:6px;height:150px;overflow:auto;padding:6px 8px;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace}
 .log .t{color:#7fb7ff}.log .d{color:var(--mu)}
 .pubrow{display:flex;gap:6px;margin-top:6px}.pubrow input{flex:1}
-#widgets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+#widgets,#cwidgets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .widget{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;position:relative;min-height:92px}
 .widget .wt{font-size:12px;color:var(--mu);padding-right:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .widget .wtopic{font-size:10.5px;color:#6f6f6f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -339,3 +339,24 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 #wires.dim .wire.hl{stroke-dasharray:10 7;animation:liftflow .6s linear infinite}
 @media (prefers-reduced-motion:reduce){#wires.dim .wire.hl{animation:none;stroke-dasharray:none}}
 #stage{-webkit-user-select:none;user-select:none}
+
+/* IoT Cloud */
+#pane-cloud h4{margin:0}
+#cloudThings{display:flex;flex-wrap:wrap;gap:6px;padding:2px 8px 6px}
+.thing{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 9px;border-radius:12px;background:var(--panel2);border:1px solid var(--line)}
+.thing i{width:8px;height:8px;border-radius:50%;background:#6f6f6f}
+.thing.s1 i{background:#ffb020;animation:cblink 0.8s infinite}
+.thing.s2 i{background:#3ddc84;box-shadow:0 0 6px #3ddc84}
+@keyframes cblink{50%{opacity:.3}}
+.ctable{width:100%;border-collapse:collapse;font-size:12px}
+.ctable th{text-align:left;font-weight:500;color:var(--mu);padding:3px 4px;border-bottom:1px solid var(--line)}
+.ctable td{padding:3px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+.ctable td.cval{color:#00b5bd;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.ctable .tb{padding:1px 6px;margin-left:2px}
+#cloudVars{overflow-x:auto}
+#pane-cloud>*{flex-shrink:0}
+.ctable{display:table}
+.widget .lamp{width:26px;height:26px;border-radius:50%;background:#3a3a3a;display:inline-block}
+.widget .lamp.on{background:#3cff7a;box-shadow:0 0 12px #3cff7a}
+.widget .cmsg{height:70px;margin-top:6px}
+#cwidgets .gauge{color:var(--tx)}

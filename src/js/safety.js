@@ -78,6 +78,20 @@
       Object.entries(w).forEach(([k, v]) => { if (typeof v === 'string') c[k] = text(v, 120); else if (typeof v === 'number') c[k] = num(v); else if (typeof v === 'boolean') c[k] = v; });
       return c;
     });
+    // IoT Cloud: variables (names become C++ identifiers in the generated header, so they are checked strictly)
+    const cl = src.cloud && typeof src.cloud === 'object' ? src.cloud : {};
+    const VAR = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/, names = new Set();
+    out.cloud = { vars: [], widgets: [] };
+    (Array.isArray(cl.vars) ? cl.vars : []).slice(0, LIMITS.widgets).forEach((v) => {
+      if (!v || typeof v !== 'object' || typeof v.name !== 'string' || !VAR.test(v.name) || names.has(v.name) || (IOTF.iotcloud && !IOTF.iotcloud.validName(v.name))) return;
+      names.add(v.name);
+      out.cloud.vars.push({ name: v.name, type: ['bool', 'int', 'float', 'String'].includes(v.type) ? v.type : 'float', perm: v.perm === 'READ' ? 'READ' : 'READWRITE',
+        board: typeof v.board === 'string' && ids.has(v.board) ? v.board : '*', every: [1, 2, 5, 10, 30, 60].includes(v.every) ? v.every : 0 });
+    });
+    (Array.isArray(cl.widgets) ? cl.widgets : []).slice(0, LIMITS.widgets).forEach((w) => {
+      if (!w || typeof w !== 'object' || !names.has(w.var) || !['switch', 'push', 'slider', 'value', 'gauge', 'status', 'chart', 'messenger'].includes(w.type)) return;
+      out.cloud.widgets.push({ id: typeof w.id === 'string' && ID.test(w.id) ? w.id : 'c' + out.cloud.widgets.length, type: w.type, var: w.var, title: text(w.title, 60), unit: text(w.unit, 12), min: num(w.min), max: num(w.max, 100) });
+    });
     out.sdFiles = {};
     let bytes = 0;
     if (src.sdFiles && typeof src.sdFiles === 'object') Object.entries(src.sdFiles).slice(0, LIMITS.sdFiles).forEach(([k, v]) => {

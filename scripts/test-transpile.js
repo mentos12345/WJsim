@@ -15,6 +15,8 @@ const cases = [
   ['number suffixes', 'void setup(){ long a = 2048L; unsigned long b = 1000UL; int c = 0xFFul; float d = 1.5f; float e = .5f; byte f = 0xEF; }\nvoid loop(){}', 'let a = __int(2048); let b = __int(1000); let c = __int(0xFF); let d = 1.5; let e = .5; let f = __int(0xEF);'],
   ['AccelStepper::DRIVER', '#include <AccelStepper.h>\nAccelStepper s(AccelStepper::DRIVER, 2, 3);\nvoid setup(){}\nvoid loop(){ s.runToPosition(); }', 'await s.runToPosition()'],
   ['PMS::DATA', '#include <PMS.h>\nPMS pms(Serial2);\nPMS::DATA d;\nvoid setup(){}\nvoid loop(){ pms.read(d); }', 'new PMS_DATA()'],
+  ['Arduino Cloud types', 'CloudSwitch lamp;\nCloudTemperatureSensor t;\nvoid setup(){ ArduinoCloud.addProperty(lamp, READWRITE, ON_CHANGE, onLampChange); ArduinoCloud.addCallback(ArduinoIoTCloudEvent::CONNECT, ok); }\nvoid ok(){}\nvoid onLampChange(){}\nvoid loop(){ ArduinoCloud.update(); }', 'ArduinoCloud.addProperty(() => lamp, (__v) => { lamp = __v; }, "lamp", READWRITE'],
+  ['Arduino Cloud event', 'void ok(){}\nvoid setup(){ ArduinoCloud.addCallback(ArduinoIoTCloudEvent::CONNECT, ok); }\nvoid loop(){}', 'ArduinoIoTCloudEvent.CONNECT'],
 ];
 for (const [name, src, want] of cases) {
   try { const js = IOTF.transpile(src).code; if (js.includes(want)) console.log('ok  ', name); else { bad++; console.log('FAIL', name, '\n', js); } } catch (e) { bad++; console.log('FAIL', name, e.message); }

@@ -4,14 +4,14 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.6.1';
+  const VERSION = '1.7.0';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
   app.pageTitle = document.title;
 
   /* ---------- project model ---------- */
   function newProject(mode = 'basic', boardKey = 'esp32') {
-    return { app: 'WJSIM', version: 1, name: 'ไม่มีชื่อ', mode, parts: [], wires: [], blocks: null, code: '', codeManual: false, programs: {}, widgets: [], sdFiles: {} };
+    return { app: 'WJSIM', version: 1, name: 'ไม่มีชื่อ', mode, parts: [], wires: [], blocks: null, code: '', codeManual: false, programs: {}, widgets: [], cloud: { vars: [], widgets: [] }, sdFiles: {} };
   }
   function boardPart(boardKey) { return { id: 'board', type: IOTF.BOARDS[boardKey].tag, x: 40, y: 40, rot: 0, attrs: {}, sim: {} }; }
 
@@ -28,7 +28,7 @@
     const first = ed.board();
     if (first && !p.programs[first.id]) p.programs[first.id] = { blocks: p.blocks || null, code: p.code || '', codeManual: !!p.codeManual };
     app.curBoard = null;
-    iot.reset();
+    iot.reset(); IOTF.iotcloud.reset();
     showProgram();
     $('wireStyle').value = p.wireStyle || 'ortho';
     selectRightTab(p.mode === 'advanced' && (p.codeManual || blocks.isEmpty()) ? 'code' : 'blocks');
@@ -67,19 +67,23 @@
   // C++ for every board, for running them together
   function programsForRun() {
     stashActive();
-    const cur = ed.board();
-    return ed.boards().map((b) => {
-      if (b === cur) return { board: b, code: ed.project.codeManual ? app.cm.getValue() : blocks.code() };
+    const cur = ed.board(), uses = [];
+    const gen = (f) => { const code = f(); if (blocks.lastCloud) uses.push(blocks.lastCloud); return code; };
+    const list = ed.boards().map((b) => {
+      if (b === cur) return { board: b, code: ed.project.codeManual ? app.cm.getValue() : gen(blocks.code) };
       const pr = prog(b.id);
       if (pr.codeManual && pr.code) return { board: b, code: pr.code };
       const keep = ed.project.activeBoard;
       ed.project.activeBoard = b.id;
-      try { return { board: b, code: blocks.codeFor(pr.blocks) }; } finally { ed.project.activeBoard = keep; }
+      try { return { board: b, code: gen(() => blocks.codeFor(pr.blocks)) }; } finally { ed.project.activeBoard = keep; }
     });
+    uses.forEach((m) => IOTF.iotcloud.ensure(m)); // blocks that use a cloud variable create it
+    return list;
   }
 
   /* ---------- code editor ---------- */
   let settingCode = false;
+  app.setCode = (t, m) => setCode(t, m);
   function setCode(text, manual) {
     settingCode = true; app.cm.setValue(text); settingCode = false;
     ed.project.code = text; ed.project.codeManual = !!manual;
@@ -167,10 +171,11 @@
   /* ---------- tabs & splitters ---------- */
   function selectRightTab(t) {
     document.querySelectorAll('#rightTabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
-    ['blocks', 'code', 'dash', 'check'].forEach((k) => { $('pane-' + k).hidden = k !== t; });
+    ['blocks', 'code', 'dash', 'cloud', 'check'].forEach((k) => { $('pane-' + k).hidden = k !== t; });
     if (t === 'blocks') setTimeout(blocks.resize, 0);
     if (t === 'code') setTimeout(() => app.cm.refresh(), 0);
     if (t === 'dash') iot.renderWidgets();
+    if (t === 'cloud') { if (!ed.project.codeManual) { blocks.code(); if (blocks.lastCloud) IOTF.iotcloud.ensure(blocks.lastCloud); } IOTF.iotcloud.render(); }
   }
   app.selectRightTab = selectRightTab;
   function initSplitters() {
@@ -309,6 +314,7 @@
     (t.boards || []).forEach((x) => { p.programs[x.id] = { blocks: x.blocks || null, code: x.code || '', codeManual: !!x.code }; });
     p.activeBoard = 'board';
     p.widgets = (t.widgets || []).map((w, i) => Object.assign({ id: 'wg' + i }, w));
+    if (t.cloud) p.cloud = { vars: t.cloud.vars.map((v) => Object.assign({ perm: 'READWRITE', board: '*' }, v)), widgets: (t.cloud.widgets || []).map((w, i) => Object.assign({ id: 'cw' + i }, w)) };
     openProject(p, { dirty: false });
     if (t.power) { ed.autoPower(); ed.undo = []; }
     renderChecks();
@@ -340,7 +346,7 @@
 
   /* ---------- wiring up ---------- */
   function init() {
-    ed.initStage(); ed.initPalette(); blocks.init(); iot.init();
+    ed.initStage(); ed.initPalette(); blocks.init(); iot.init(); IOTF.iotcloud.init();
     app.cm = CodeMirror($('codeHost'), { mode: 'text/x-c++src', theme: 'material-darker', lineNumbers: true, matchBrackets: true, autoCloseBrackets: true, indentUnit: 2, tabSize: 2, value: '' });
     if (IOTF.autocomplete) IOTF.autocomplete.attach(app.cm);
     app.cm.on('change', () => {

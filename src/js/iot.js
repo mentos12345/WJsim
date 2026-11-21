@@ -17,6 +17,7 @@
   function busRecv(msg) {
     if (!msg || msg.from === winId) return;
     if (msg.type === 'mqtt') deliver(msg.topic, msg.payload, msg.retain, true);
+    if (msg.type === 'iotcloud' && IOTF.iotcloud) IOTF.iotcloud.fromBus(msg);
     if (msg.type === 'espnow') { if (IOTF.sim.espnowFromRemote) IOTF.sim.espnowFromRemote(msg); }
     if (msg.type === 'lora') {
       loraLog(`รับ (${(msg.freq / 1e6).toFixed(0)} MHz): ${msg.text}`);
@@ -163,6 +164,7 @@
     const cv = d.querySelector('canvas');
     if (cv) drawChart(cv, iot.hist[w.topic] || []);
   }
+  iot.drawChart = (cv, data) => drawChart(cv, data);
   function drawChart(cv, data) {
     const r = cv.getBoundingClientRect(); const W = Math.max(100, r.width | 0), H = 80, dpr = window.devicePixelRatio || 1;
     cv.width = W * dpr; cv.height = H * dpr; const k = cv.getContext('2d'); k.scale(dpr, dpr);

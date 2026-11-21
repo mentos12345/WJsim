@@ -81,6 +81,7 @@
       <button data-tab="blocks" class="on">Block</button>
       <button data-tab="code">C++</button>
       <button data-tab="dash">Dashboard</button>
+      <button data-tab="cloud" title="จำลอง IoT Cloud แบบ Arduino Cloud">☁ คลาวด์</button>
       <button data-tab="check">ตรวจวงจร <span id="checkBadge" class="badge" hidden></span></button>
     </nav>
     <div class="pane" id="pane-blocks"><div id="blocklyDiv"></div></div>
@@ -101,6 +102,20 @@
       <div class="pubrow"><input id="httpUrl" placeholder="http://192.168.1.101/" value="http://192.168.1.101/"><button class="tb small" id="btnHttp">เปิด</button></div>
       <pre id="httpOut" class="log mono"></pre>
       <p class="muted small">เครือข่ายจำลองอยู่ในแอป ไม่ได้ส่งข้อมูลออกอินเทอร์เน็ต วางบอร์ดหลายตัวบนวงจรเดียวกันเพื่อให้ส่งข้อมูลหากันได้ (ESP-NOW, UDP, HTTP, MQTT, LoRa) หรือเปิดหลายหน้าต่าง (เมนูไฟล์ → หน้าต่างใหม่)</p>
+    </div>
+    <div class="pane" id="pane-cloud" hidden>
+      <div class="dashbar"><b class="small">WJSIM IoT Cloud</b><div class="spacer"></div>
+        <button class="tb small" id="btnCloudHeader" title="ดูไฟล์ thingProperties.h ที่สร้างให้">thingProperties.h</button>
+        <button class="tb small" id="btnCloudSketch" title="ใส่โค้ดตั้งต้นแบบ Arduino Cloud ลงแท็บ C++">ใส่โค้ดตั้งต้น</button>
+      </div>
+      <div id="cloudThings"></div>
+      <div class="dashbar"><h4>ตัวแปรบนคลาวด์</h4><div class="spacer"></div><button class="tb small" id="btnCloudVar">+ ตัวแปร</button></div>
+      <div id="cloudVars"></div>
+      <div class="dashbar"><h4>Dashboard คลาวด์</h4><div class="spacer"></div><button class="tb small" id="btnCloudWidget">+ วิดเจ็ต</button></div>
+      <div id="cwidgets"></div>
+      <h4>บันทึกคลาวด์</h4>
+      <div id="cloudLog" class="log"></div>
+      <p class="muted small">คลาวด์จำลองอยู่ในแอป (คล้าย Arduino Cloud): บอร์ดที่ต่อ WiFi แล้วเรียก <code>ArduinoCloud.update()</code> จะส่งค่าตัวแปรขึ้นคลาวด์ และรับค่าที่เปลี่ยนจาก Dashboard หรือจากบอร์ดอื่น ตั้งตัวแปรเป็น "ทุกบอร์ด" เพื่อให้หลายบอร์ดใช้ค่าเดียวกัน เปิดหลายหน้าต่างก็ซิงก์ถึงกัน ไม่มีข้อมูลออกนอกเครื่อง</p>
     </div>
     <div class="pane" id="pane-check" hidden>
       <div class="codebar"><span class="muted small">ปัญหาของวงจร</span><div class="spacer"></div><button class="tb small" id="btnAutoPower">⚡ ต่อไฟ/กราวด์ให้อัตโนมัติ</button></div>
@@ -183,6 +198,7 @@
 <script src="js/transpile.js"></script>
 <script src="js/runtime.js"></script>
 <script src="js/iot.js"></script>
+<script src="js/iotcloud.js"></script>
 <script src="js/blocks.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/autocomplete.js"></script>

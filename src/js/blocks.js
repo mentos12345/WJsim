@@ -3,7 +3,7 @@
   'use strict';
   const ed = IOTF.editor;
   const BL = window.Blockly;
-  const COL = { base: 30, io: 210, time: 120, serial: 160, sensor: 290, out: 330, iot: 15, now: 45, logic: 210 };
+  const COL = { base: 30, io: 210, time: 120, serial: 160, sensor: 290, out: 330, iot: 15, now: 45, cloud: 182, logic: 210 };
 
   const board = () => ed.boardDef() || IOTF.BOARDS.esp32;
   function pinField(analog) {
@@ -115,13 +115,20 @@
   def('iotf_mqtt_value', function () { this.appendDummyInput().appendField('ข้อความล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('wjsim/led'), 'TOPIC'); val(this, COL.iot, 'String'); });
   def('iotf_mqtt_number', function () { this.appendDummyInput().appendField('ตัวเลขล่าสุดจากหัวข้อ').appendField(new BL.FieldTextInput('wjsim/level'), 'TOPIC'); val(this, COL.iot, 'Number'); });
 
+  // IoT Cloud (Arduino Cloud style)
+  const cloudName = (d) => new BL.FieldTextInput(d, (t) => { t = String(t).trim().replace(/[^A-Za-z0-9_]/g, ''); return /^[A-Za-z_]/.test(t) ? t : null; });
+  def('iotf_cloud_set', function () { this.appendValueInput('VALUE').appendField('ตั้งตัวแปรคลาวด์').appendField(cloudName('temperature'), 'NAME').appendField('เป็น'); this.setInputsInline(true); stmt(this, COL.cloud, 'ค่าจะถูกส่งขึ้นคลาวด์ตอน ArduinoCloud.update() และแสดงบน Dashboard คลาวด์ (ชื่อต้องเป็นภาษาอังกฤษ)'); });
+  def('iotf_cloud_get', function () { this.appendDummyInput().appendField('ค่าคลาวด์').appendField(cloudName('led'), 'NAME'); val(this, COL.cloud, null, 'ค่าล่าสุดของตัวแปรคลาวด์ (เปลี่ยนได้จาก Dashboard หรือบอร์ดอื่น)'); });
+  def('iotf_cloud_changed', function () { this.appendDummyInput().appendField('ตัวแปรคลาวด์').appendField(cloudName('led'), 'NAME').appendField('เพิ่งถูกเปลี่ยนจากคลาวด์'); val(this, COL.cloud, 'Boolean', 'จริงครั้งเดียวหลังจาก Dashboard หรือบอร์ดอื่นเปลี่ยนค่า'); });
+  def('iotf_cloud_connected', function () { this.appendDummyInput().appendField('เชื่อมต่อคลาวด์แล้ว'); val(this, COL.cloud, 'Boolean'); });
+
   /* ---------- generator ---------- */
   const G = new BL.CodeGenerator('CPP');
   const O = { ATOMIC: 0, POSTFIX: 1, UNARY: 2, MUL: 3, ADD: 4, REL: 6, EQ: 7, AND: 11, OR: 12, COND: 13, ASSIGN: 14, NONE: 99 };
   G.INDENT = '  ';
   const RESERVED = new Set('int float char long double bool boolean void String byte word if else for while do switch case break continue return true false HIGH LOW INPUT OUTPUT setup loop delay map min max abs new delete class struct const static unsigned signed auto this'.split(' '));
   G.init = function (ws) {
-    this.inc = new Set(); this.glob = new Map(); this.setups = new Map(); this.helpers = new Map(); this.subs = new Set(); this.mqtt = false; this.now = null;
+    this.inc = new Set(); this.glob = new Map(); this.setups = new Map(); this.helpers = new Map(); this.subs = new Set(); this.mqtt = false; this.now = null; this.cloud = null; this.cloudChanged = new Set();
     this.vars = new Map();
     const map = ws.getVariableMap ? ws.getVariableMap() : null;
     const all = map ? (map.getAllVariables ? map.getAllVariables() : []) : ws.getAllVariables();
@@ -147,9 +154,12 @@
   };
   G.scrubNakedValue = () => '';
   G.finish = function () {
+    IOTF.blocks.lastCloud = this.cloud; // cloud variables these blocks use (created in the Cloud tab when the program runs)
     const out = ['// สร้างจาก Block ด้วย WJSIM — แก้เองได้ในแท็บนี้'];
+    if (this.cloud) { this.inc.delete('WiFi.h'); this.inc.delete('WiFiNINA.h'); out.push('#include "thingProperties.h" // ตัวแปรคลาวด์ (ดูในแท็บ คลาวด์)'); }
     if (this.inc.size) { out.push(...[...this.inc].map((i) => `#include <${i}>`)); out.push(''); }
-    if (this.vars.size) { this.vars.forEach((v) => out.push(v.str ? `String ${v.c} = "";${v.label !== v.c ? ' // ' + v.label : ''}` : `float ${v.c} = 0;${v.label !== v.c ? ' // ' + v.label : ''}`)); out.push(''); }
+    const cloudVars = this.cloud ? new Set([...this.cloud.keys()].concat(IOTF.iotcloud ? IOTF.iotcloud.vars().map((x) => x.name) : [])) : new Set();
+    if (this.vars.size) { this.vars.forEach((v) => cloudVars.has(v.c) || out.push(v.str ? `String ${v.c} = "";${v.label !== v.c ? ' // ' + v.label : ''}` : `float ${v.c} = 0;${v.label !== v.c ? ' // ' + v.label : ''}`)); out.push(''); }
     if (this.glob.size) { out.push(...this.glob.values()); out.push(''); }
     if (this.mqtt) {
       const subs = [...this.subs];
@@ -174,13 +184,19 @@
         'void nowSend(const uint8_t *mac, String msg) {', '  esp_now_send(mac, (const uint8_t *)msg.c_str(), msg.length());', '}', '',
         'bool nowGotNew() {', '  bool n = nowNew;', '  nowNew = false;', '  return n;', '}', '');
     }
+    this.cloudChanged.forEach((n) => {
+      const cb = 'on' + n[0].toUpperCase() + n.slice(1) + 'Change';
+      out.push(`bool ${n}Changed = false;`, `void ${cb}() {`, `  ${n}Changed = true;`, '}', `bool ${n}GotChange() {`, `  bool c = ${n}Changed;`, `  ${n}Changed = false;`, '  return c;', '}', '');
+    });
     this.helpers.forEach((h) => { out.push(h, ''); });
     out.push('void setup() {');
     const su = [...this.setups.values()];
     if (this.now) { su.push('WiFi.mode(WIFI_STA);', 'if (esp_now_init() != ESP_OK) Serial.println("ESP-NOW init failed");', 'esp_now_register_recv_cb(nowOnRecv);', 'nowAddPeer(nowAll);'); [...this.now].forEach((m, i) => su.push(`nowAddPeer(nowPeer${i + 1});`)); }
+    if (this.cloud) su.push('initProperties();', 'ArduinoCloud.begin(ArduinoIoTPreferredConnection);');
     if (this.mqtt) { su.push('mqtt.setServer("broker.wjsim.local", 1883);'); if (this.subs.size) su.push('mqtt.setCallback(iotfOnMessage);'); }
     su.forEach((l) => out.push('  ' + l));
     out.push(this.setupCode.replace(/\s+$/, '') ? this.setupCode.replace(/\s+$/, '') : '', '}', '', 'void loop() {');
+    if (this.cloud) out.push('  ArduinoCloud.update();');
     if (this.mqtt) out.push('  iotfMqtt();');
     out.push(this.loopCode.replace(/\s+$/, ''), '}');
     return out.filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n').replace(/\n\n}/g, '\n}') + '\n';
@@ -343,6 +359,17 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
   F.iotf_now_new = () => { useNow(); return ['nowGotNew()', O.ATOMIC]; };
   F.iotf_now_text = () => { useNow(); return ['nowMsg', O.ATOMIC]; };
   F.iotf_now_number = () => { useNow(); return ['nowMsg.toFloat()', O.ATOMIC]; };
+  const useCloud = (b, type) => { serial(); if (!G.cloud) G.cloud = new Map(); const n = b.getFieldValue('NAME') || 'value'; if (type || !G.cloud.has(n)) G.cloud.set(n, type || G.cloud.get(n) || 'float'); return n; };
+  const cloudTypeOf = (b) => {
+    const t = b.getInputTargetBlock('VALUE'), chk = t && t.outputConnection.getCheck() || [];
+    if (chk.includes('Boolean') || (t && ['logic_boolean', 'logic_compare', 'logic_operation', 'logic_negate', 'iotf_button'].includes(t.type))) return 'bool';
+    if (chk.includes('String') || (t && ['text', 'text_join', 'iotf_mqtt_value', 'iotf_now_text'].includes(t.type))) return 'String';
+    return 'float';
+  };
+  F.iotf_cloud_set = (b) => { const n = useCloud(b, cloudTypeOf(b)); return `${n} = ${v(b, 'VALUE', O.ASSIGN, '0')};\n`; };
+  F.iotf_cloud_get = (b) => [useCloud(b), O.ATOMIC];
+  F.iotf_cloud_changed = (b) => { const n = useCloud(b); G.cloudChanged.add(n); return [`${n}GotChange()`, O.ATOMIC]; };
+  F.iotf_cloud_connected = () => { if (!G.cloud) G.cloud = new Map(); serial(); return ['ArduinoCloud.connected()', O.ATOMIC]; };
   F.iotf_mqtt_value = (b) => { useMqtt(); const t = b.getFieldValue('TOPIC'); G.subs.add(t); return [`iotfGet(${JSON.stringify(t)})`, O.ATOMIC]; };
   F.iotf_mqtt_number = (b) => { useMqtt(); const t = b.getFieldValue('TOPIC'); G.subs.add(t); return [`iotfGet(${JSON.stringify(t)}).toFloat()`, O.ATOMIC]; };
 
@@ -399,6 +426,7 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
         { kind: 'category', name: 'เซ็นเซอร์', colour: COL.sensor, contents: sensors },
         { kind: 'category', name: 'เอาต์พุต', colour: COL.out, contents: [B('iotf_motor', { inputs: { SPEED: num(80) } }), B('iotf_stepper28', { inputs: { DEG: num(90), RPM: num(10) } }), B('iotf_servo', { inputs: { ANGLE: num(90) } }), B('iotf_tone', { inputs: { FREQ: num(1000), MS: num(200) } }), B('iotf_notone'), B('iotf_rgb'), B('iotf_relay'), B('iotf_lcd_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_lcd_clear'), B('iotf_oled_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_oled_clear'), B('iotf_neopixel', { inputs: { I: num(0) } }), B('iotf_neopixel_fill')] },
         { kind: 'category', name: 'บอร์ดคุยกัน', colour: COL.now, contents: [B('iotf_now_send', { inputs: { VALUE: num(1) } }), B('controls_if', { inputs: { IF0: { block: { type: 'iotf_now_new' } } } }), B('iotf_now_new'), B('iotf_now_text'), B('iotf_now_number')] },
+        { kind: 'category', name: 'คลาวด์', colour: COL.cloud, contents: [B('iotf_cloud_set', { inputs: { VALUE: num(25) } }), B('iotf_cloud_get'), B('controls_if', { inputs: { IF0: { block: { type: 'iotf_cloud_changed' } } } }), B('iotf_cloud_changed'), B('iotf_cloud_connected')] },
         { kind: 'category', name: 'IoT', colour: COL.iot, contents: [B('iotf_wifi'), B('iotf_mqtt_publish', { inputs: { VALUE: num(25) } }), B('iotf_mqtt_value'), B('iotf_mqtt_number')] },
         { kind: 'sep' },
         { kind: 'category', name: 'เงื่อนไข', colour: '#5b80a5', contents: [B('controls_if'), B('controls_if', { extraState: { hasElse: true } }), B('logic_compare'), B('logic_operation'), B('logic_negate'), B('logic_boolean'), B('logic_ternary')] },

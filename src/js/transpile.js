@@ -12,7 +12,7 @@
   const CLASSES = ['DHT', 'Servo', 'ESP32Servo', 'LiquidCrystal_I2C', 'LiquidCrystal', 'Adafruit_SSD1306', 'Adafruit_ILI9341', 'Adafruit_NeoPixel', 'WiFiClient', 'WiFiClientSecure',
     'PubSubClient', 'Adafruit_MPU6050', 'sensors_event_t', 'HX711', 'MFRC522', 'TinyGPSPlus', 'SoftwareSerial', 'HardwareSerial', 'RTC_DS1307', 'RTC_DS3231', 'DateTime', 'File',
     'Keypad', 'Stepper', 'IRrecv', 'TimeSpan', 'IPAddress', 'WebServer', 'ESP8266WebServer', 'HTTPClient', 'WiFiUDP', 'esp_now_peer_info_t',
-    'OneWire', 'DallasTemperature', 'Adafruit_BME280', 'Adafruit_BMP280', 'BH1750', 'PMS', 'PMS_DATA', 'PZEM004Tv30', 'PulseOximeter', 'MAX30105', 'AccelStepper'];
+    'OneWire', 'DallasTemperature', 'Adafruit_BME280', 'Adafruit_BMP280', 'BH1750', 'PMS', 'PMS_DATA', 'PZEM004Tv30', 'PulseOximeter', 'MAX30105', 'AccelStepper', 'WiFiConnectionHandler'];
 
   class TranspileError extends Error { constructor(msg, line) { super(msg); this.line = line; } }
 
@@ -195,6 +195,12 @@
     while ((bad = badRe.exec(s)) && bad[1] === 'class' && /^class \w+ \{ constructor\(\)/.test(s.slice(bad.index))) { /* generated */ }
     if (bad) throw new TranspileError(`ยังไม่รองรับ '${bad[1]}' ในตัวจำลอง (ใช้ตัวแปร/ฟังก์ชันธรรมดาแทน)`, lineAt(s, bad.index));
     s = s.replace(/\bstd::/g, '');
+    // Arduino Cloud: special cloud types are plain values here; addProperty gets a getter/setter so the cloud can read and write the variable
+    s = s.replace(/\bCloud(?:Switch|Light|MotionSensor|ContactSensor|SmartPlug)\b/g, 'bool')
+      .replace(/\bCloud(?:Temperature|TemperatureSensor|Percentage|RelativeHumidity|Humidity|Pressure|Illuminance|Length|Mass|Velocity|ElectricCurrent|ElectricPotential|ElectricResistance|Power|Energy|Frequency|Flow|Volume|Acceleration|Angle|Area|Capacitance|Force|Density|Time|Information|InformationRate|Distance|ElectricCharge|Heart|Float)\b/g, 'float')
+      .replace(/\bCloud(?:Int|Counter)\b/g, 'int').replace(/\bCloudString\b/g, 'String');
+    s = s.replace(/\b(ArduinoIoTCloudEvent|Permission|SyncPolicy)::(\w+)/g, (m, a, b) => (a === 'SyncPolicy' ? b : a + '.' + b));
+    s = s.replace(/\bArduinoCloud\s*\.\s*addProperty\s*\(\s*([A-Za-z_]\w*)\s*,/g, (m, x) => { P.lits.push(JSON.stringify(x)); return `ArduinoCloud.addProperty(() => ${x}, (__v) => { ${x} = __v; }, \u0001${P.lits.length - 1}\u0002,`; });
     s = s.replace(/\bPMS::DATA\b/g, 'PMS_DATA').replace(/\b(BH1750|AccelStepper)::(\w+)/g, '$1.$2');
     const colon = /\w::\w/.exec(s);
     if (colon) throw new TranspileError("ยังไม่รองรับเครื่องหมาย '::'", lineAt(s, colon.index));

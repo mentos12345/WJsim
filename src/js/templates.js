@@ -592,5 +592,113 @@ void loop() {
 `
   });
 
+  // ---------------- IoT Cloud (Arduino Cloud style) ----------------
+  const cset = (name, value) => blk('iotf_cloud_set', { NAME: name }, { VALUE: inp(value) });
+  T.push({
+    id: 'cloud-basic', mode: 'basic', board: 'esp32', title: 'IoT Cloud: ส่งอุณหภูมิขึ้นคลาวด์ + สั่งไฟจากคลาวด์',
+    desc: 'แบบ Arduino Cloud: DHT22 ส่งค่าขึ้นตัวแปรคลาวด์ และกดสวิตช์บน Dashboard คลาวด์เพื่อเปิด-ปิด LED',
+    parts: [{ id: 'dht1', type: 'dht22', x: 230, y: 20 }, { id: 'led1', type: 'led', x: 240, y: 170 }],
+    wires: [['dht1', 'SDA', 'D15'], ['led1', 'A', 'D2']],
+    cloud: {
+      vars: [{ name: 'temperature', type: 'float', perm: 'READ' }, { name: 'humidity', type: 'float', perm: 'READ' }, { name: 'led', type: 'bool' }],
+      widgets: [{ type: 'gauge', var: 'temperature', title: 'อุณหภูมิ', unit: '°C', min: 0, max: 50 }, { type: 'switch', var: 'led', title: 'ไฟ LED' }, { type: 'status', var: 'led', title: 'สถานะไฟ' }, { type: 'chart', var: 'humidity', title: 'ความชื้น', unit: '%' }]
+    },
+    blocks: main([], [
+      cset('temperature', blk('iotf_dht', { WHAT: 'T', PIN: '15' })),
+      cset('humidity', blk('iotf_dht', { WHAT: 'H', PIN: '15' })),
+      ifElse(blk('iotf_cloud_get', { NAME: 'led' }), [dw(2, 'HIGH')], [dw(2, 'LOW')]),
+      ifElse(blk('iotf_cloud_changed', { NAME: 'led' }), [print(join('คลาวด์สั่งไฟ: ', blk('iotf_cloud_get', { NAME: 'led' })))]),
+      wait(200)
+    ])
+  });
+  T.push({
+    id: 'cloud-two', mode: 'advanced', board: 'esp32', power: true, title: 'IoT Cloud: ESP32 สองตัวส่งข้อมูลหากันผ่านคลาวด์',
+    desc: 'C++ แบบ Arduino Cloud: ESP32 #1 หมุนลูกบิด/กดปุ่ม → ตัวแปรคลาวด์ → ESP32 #2 หมุน Servo และเปิดไฟ (สั่งจาก Dashboard ได้ด้วย)',
+    parts: [{ id: 'pot1', type: 'potentiometer', x: 230, y: 20 }, { id: 'btn1', type: 'pushbutton', x: 230, y: 150 }, { id: 'sv1', type: 'servo', x: 750, y: 30 }, { id: 'led1', type: 'led', x: 770, y: 160 }],
+    cloud: {
+      vars: [{ name: 'angle', type: 'int' }, { name: 'alarm', type: 'bool' }, { name: 'message', type: 'String' }],
+      widgets: [{ type: 'slider', var: 'angle', title: 'มุม Servo', unit: '°', min: 0, max: 180 }, { type: 'status', var: 'alarm', title: 'ปุ่มที่ ESP32 #1' }, { type: 'messenger', var: 'message', title: 'ข้อความ' }, { type: 'chart', var: 'angle', title: 'มุมย้อนหลัง' }]
+    },
+    boards: [{ id: 'board2', board: 'esp32', name: 'ESP32 #2', x: 560, y: 40, code: `/*
+  ESP32 #2 — รับค่าจากคลาวด์
+  ตัวแปรคลาวด์ (ดูแท็บ คลาวด์): int angle; bool alarm; String message;
+*/
+#include "thingProperties.h"
+#include <ESP32Servo.h>
+
+Servo servo;
+
+void setup() {
+  Serial.begin(9600);
+  delay(1500);
+  servo.attach(13);
+  pinMode(2, OUTPUT);
+
+  initProperties();
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+  setDebugMessageLevel(2);
+}
+
+void loop() {
+  ArduinoCloud.update();
+  delay(20);
+}
+
+// เรียกเมื่อ angle ถูกเปลี่ยนจากคลาวด์ (ESP32 #1 หรือ Dashboard)
+void onAngleChange() {
+  servo.write(angle);
+  Serial.println("มุมใหม่จากคลาวด์: " + String(angle));
+}
+
+void onAlarmChange() {
+  digitalWrite(2, alarm ? HIGH : LOW);
+}
+
+void onMessageChange() {
+  Serial.println("ข้อความ: " + message);
+  message = "ESP32 #2 ได้รับแล้ว";
+}
+` }],
+    wires: [['pot1', 'SIG', 'D34'], ['btn1', '1.l', 'D4'], ['sv1', 'PWM', 'D13', 'board2'], ['led1', 'A', 'D2', 'board2']],
+    code: `/*
+  ESP32 #1 — ส่งค่าขึ้นคลาวด์ (รูปแบบเดียวกับ Arduino Cloud)
+  ตัวแปรคลาวด์ (ดูแท็บ คลาวด์): int angle; bool alarm; String message;
+*/
+#include "thingProperties.h"
+
+int lastKnob = -1;
+
+void setup() {
+  Serial.begin(9600);
+  delay(1500);
+  pinMode(4, INPUT_PULLUP);
+
+  initProperties();
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+}
+
+void loop() {
+  ArduinoCloud.update();
+  int k = map(analogRead(34), 0, 4095, 0, 180);
+  if (abs(k - lastKnob) > 2) { // ส่งเมื่อหมุนลูกบิดจริง ๆ
+    lastKnob = k;
+    angle = k;
+  }
+  alarm = digitalRead(4) == LOW;
+  delay(50);
+}
+
+void onAngleChange() {
+  Serial.println("Dashboard ตั้งมุมเป็น " + String(angle));
+}
+
+void onMessageChange() {
+  Serial.println("ข้อความในคลาวด์: " + message);
+}
+`
+  });
+
   IOTF.TEMPLATES = T;
 })();
