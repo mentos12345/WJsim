@@ -318,3 +318,4 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 #selLayer .liftwire{stroke-dasharray:10 8;animation:liftflow .6s linear infinite}
 @media (prefers-reduced-motion:reduce){#selLayer .liftwire{animation:none;stroke-dasharray:none}}
 #selLayer .taglead{stroke:#ffd166;stroke-width:1.2;fill:none}
+.pitem .nm small{display:block;color:var(--mu);font-size:10.5px;line-height:1.2}

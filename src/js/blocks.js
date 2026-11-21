@@ -57,6 +57,7 @@
   def('iotf_moisture', function () { this.appendDummyInput().appendField(new BL.FieldDropdown([['ความชื้นในดิน', 'SOIL'], ['ความเปียกน้ำฝน', 'RAIN']]), 'WHAT').appendField('(%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_waterlevel', function () { this.appendDummyInput().appendField('ระดับน้ำ (%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_dsensor', function () { this.appendDummyInput().appendField('เซ็นเซอร์').appendField(new BL.FieldDropdown([['IR เจอสิ่งกีดขวาง', 'IR'], ['เส้นดำ (TCRT5000)', 'LINE'], ['ถูกแตะ (Touch)', 'TOUCH'], ['เจอแม่เหล็ก (Reed)', 'REED'], ['สั่น (SW-420)', 'VIB']]), 'WHAT').appendField('ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Boolean'); });
+  def('iotf_salinity', function () { this.appendDummyInput().appendField('ความเค็มของน้ำ (ppt) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); this.setTooltip('น้ำจืดต่ำกว่า 0.5 · น้ำกร่อย 0.5–30 · น้ำทะเลประมาณ 35 ppt (ส่วนในพันส่วน)'); });
   def('iotf_ds18b20', function () { this.appendDummyInput().appendField('อุณหภูมิ DS18B20 (°C) ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_bme', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['อุณหภูมิ (°C)', 'T'], ['ความชื้น (%)', 'H'], ['ความกดอากาศ (hPa)', 'P'], ['ความสูง (m)', 'A']]), 'WHAT').appendField('จาก').appendField(new BL.FieldDropdown([['BME280', 'BME280'], ['BMP280', 'BMP280']]), 'CHIP'); val(this, COL.sensor, 'Number'); });
   def('iotf_bh1750', function () { this.appendDummyInput().appendField('ความสว่าง (lux) BH1750'); val(this, COL.sensor, 'Number'); });
@@ -225,6 +226,8 @@
     pm(p, w === 'REED' ? 'INPUT_PULLUP' : 'INPUT');
     return [`(digitalRead(${p}) == ${low ? 'LOW' : 'HIGH'})`, O.ATOMIC];
   };
+  // the module gives 0–3.0 V for 0–50 ppt
+  F.iotf_salinity = (b) => [`(analogRead(${b.getFieldValue('PIN')}) * ${vref().toFixed(1)} / ${adcMax()}.0 / 3.0 * 50.0)`, O.ATOMIC];
   F.iotf_ds18b20 = (b) => {
     const p = b.getFieldValue('PIN'); G.inc.add('OneWire.h'); G.inc.add('DallasTemperature.h');
     G.glob.set('ow' + p, `OneWire oneWire${p}(${p});\nDallasTemperature ds${p}(&oneWire${p});`); G.setups.set('ds' + p, `ds${p}.begin();`);
@@ -385,7 +388,7 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
   const num = (n) => ({ shadow: { type: 'math_number', fields: { NUM: n } } });
   const txt = (t) => ({ shadow: { type: 'text', fields: { TEXT: t } } });
   function toolbox(basic) {
-    const sensors = [B('iotf_dht'), B('iotf_ds18b20'), B('iotf_bme'), B('iotf_ultrasonic'), B('iotf_pir'), B('iotf_dsensor'), B('iotf_light'), B('iotf_bh1750'), B('iotf_moisture'), B('iotf_waterlevel'), B('iotf_gas'), B('iotf_pms'),
+    const sensors = [B('iotf_dht'), B('iotf_ds18b20'), B('iotf_bme'), B('iotf_ultrasonic'), B('iotf_pir'), B('iotf_dsensor'), B('iotf_light'), B('iotf_bh1750'), B('iotf_moisture'), B('iotf_waterlevel'), B('iotf_salinity'), B('iotf_gas'), B('iotf_pms'),
       B('iotf_pot'), B('iotf_ntc'), B('iotf_ph'), B('iotf_tds'), B('iotf_flow'), B('iotf_acs712'), B('iotf_pzem'), B('iotf_max30102'), B('iotf_button')];
     return {
       kind: 'categoryToolbox',

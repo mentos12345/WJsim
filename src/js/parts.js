@@ -1,6 +1,6 @@
 /* WJSIM — parts registry
  * 50 parts come from wokwi-elements (MIT, (c) 2020 Uri Shaked).
- * 36 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay, 19 sensors, 7 motors/drivers, 3 breadboards) are original drawings (MIT, WJSIM contributors).
+ * 37 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay, 20 sensors, 7 motors/drivers, 3 breadboards) are original drawings (MIT, WJSIM contributors).
  */
 window.IOTF = window.IOTF || {};
 (function () {
@@ -298,6 +298,18 @@ window.IOTF = window.IOTF || {};
         b += '<path d="M150 46C150 20 200 30 230 40" stroke="#6b7078" stroke-width="11" fill="none"/><path d="M150 46C150 20 200 30 230 40" stroke="#3d4046" stroke-width="8" fill="none"/>';
         [['#d32f2f', 36], ['#f5c518', 56], ['#222', 76]].forEach(([c, y]) => { b += `<path d="M228 40C250 40 255 ${y} 276 ${y}" stroke="${c === '#222' ? '#555' : c}" stroke-width="5" fill="none"/><path d="M228 40C250 40 255 ${y} 276 ${y}" stroke="${c}" stroke-width="3.5" fill="none"/>`; });
         this.pins.forEach((p) => { b += `<rect x="${p.x - 8}" y="${p.y - 3}" width="12" height="6" fill="#d4b44a"/>` + t(p.x - 12, p.y - 5, 7, p.name, '#ddd', 'end'); });
+        return b;
+      }
+    },
+    'iotf-salinity': {
+      w: 330, h: 120, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'AO'], 318, 38, 22, ['AO']),
+      svg() {
+        let b = '<rect x="4" y="34" width="96" height="70" rx="8" fill="#cfe8f5" opacity=".35" stroke="#9fc4d8"/><rect class="salt" x="5" y="56" width="94" height="47" rx="6" fill="#4aa3ff" opacity=".45"/>';
+        b += '<rect x="38" y="4" width="28" height="66" rx="5" fill="#2b2b2b" stroke="#555"/><rect x="42" y="70" width="6" height="26" fill="#c9ced4"/><rect x="56" y="70" width="6" height="26" fill="#c9ced4"/>';
+        b += '<path d="M52 4C52 -6 130 -6 150 30C160 48 176 56 196 56" stroke="#3d4046" stroke-width="6" fill="none"/><path d="M52 4C52 -6 130 -6 150 30C160 48 176 56 196 56" stroke="#6b7078" stroke-width="2" fill="none" opacity=".6"/>';
+        b += '<rect x="190" y="8" width="140" height="104" rx="6" fill="#1b56a6"/><circle cx="212" cy="56" r="14" fill="#c9ced4" stroke="#8a9099" stroke-width="2"/><circle cx="212" cy="56" r="6" fill="#555"/>';
+        b += chip(240, 44, 30, 16) + '<circle class="pled" cx="284" cy="24" r="3.5" fill="#4a1414"/>' + hdr(this.pins, 306) + t(254, 102, 9, 'SALINITY', '#fff', 'middle', 'bold');
         return b;
       }
     },
@@ -605,6 +617,7 @@ window.IOTF = window.IOTF || {};
   sen('iotf-acs712', { name: 'ACS712 วัดกระแส', kind: 'acs712', sim: { current: [1.5, -5, 5, 0.05, 'A'] } });
   sen('iotf-pzem004t', { name: 'PZEM-004T วัดไฟฟ้า', kind: 'pzem', level: 'advanced', sim: { voltage: [220, 80, 260, 0.5, 'V'], current: [1.2, 0, 100, 0.1, 'A'], pf: [0.95, 0, 1, 0.01, 'PF'], freq: [50, 45, 65, 0.1, 'Hz'] } });
   sen('iotf-yfs201', { name: 'YF-S201 วัดการไหลของน้ำ', kind: 'flow', sim: { flow: [5, 0, 30, 0.5, 'L/min'] } });
+  sen('iotf-salinity', { name: 'เซ็นเซอร์ความเค็ม (Salinity)', kind: 'salinity', sim: { ppt: [5, 0, 50, 0.1, 'ppt'] } });
   sen('iotf-max30102', { name: 'MAX30102 ชีพจร/ออกซิเจน', kind: 'oximeter', optional: ['INT'], sim: { bpm: [75, 40, 180, 1, 'bpm'], spo2: [97, 80, 100, 1, '% SpO2'], finger: [1, 0, 1, 1, 'วางนิ้ว'] } });
   def('iotf-loadcell', { tag: 'iotf-loadcell', name: 'Load Cell', cat: 'เซ็นเซอร์', kind: 'loadcell', sim: { weight: [0, 0, 5000, 10, 'g'] } });
 
@@ -648,6 +661,40 @@ window.IOTF = window.IOTF || {};
   def('ds1307', { name: 'RTC DS1307', cat: 'โมดูล', kind: 'rtc' });
   def('microsd-card', { name: 'microSD Card', cat: 'โมดูล', kind: 'sd' });
   def('ir-receiver', { name: 'IR Receiver', cat: 'โมดูล', kind: 'irrecv' });
+
+  // English names and extra search words (Thai and English), so a part is found whichever language is typed
+  const EN = {
+    'esp32-devkit-v1': ['ESP32 DevKit V1', 'wifi board esp'], 'arduino-uno': ['Arduino Uno', 'board atmega328 อาดุยโน่'], 'arduino-nano': ['Arduino Nano', 'board'], 'arduino-mega': ['Arduino Mega 2560', 'board'],
+    'nano-rp2040-connect': ['Arduino Nano RP2040 Connect', 'board raspberry pi pico'], franzininho: ['Franzininho ATtiny85', 'board digispark'],
+    led: ['LED', 'light lamp ไฟ หลอด'], 'rgb-led': ['RGB LED', 'color light ไฟสี'], 'led-bar-graph': ['LED Bar Graph', 'level light'], 'led-ring': ['NeoPixel Ring WS2812', 'rgb strip ไฟวงแหวน'],
+    neopixel: ['NeoPixel WS2812B', 'rgb addressable'], 'neopixel-matrix': ['NeoPixel Matrix 8x8', 'rgb led matrix'], buzzer: ['Buzzer', 'speaker sound beep ลำโพง เสียง'],
+    lcd1602: ['LCD 16x2 I2C display', 'จอ screen'], lcd2004: ['LCD 20x4 I2C display', 'จอ screen'], ssd1306: ['OLED display SSD1306', 'จอ screen'], ili9341: ['TFT display ILI9341', 'จอสี screen'], '7segment': ['7-Segment display', 'จอตัวเลข'],
+    dht22: ['DHT22 temperature humidity sensor', 'am2302 temp อุณหภูมิ ความชื้น'], 'hc-sr04': ['HC-SR04 ultrasonic distance sensor', 'sonar ระยะทาง'], 'pir-motion-sensor': ['PIR motion sensor', 'human detect เคลื่อนไหว'],
+    'photoresistor-sensor': ['LDR light sensor photoresistor', 'brightness แสง'], 'gas-sensor': ['MQ-2 gas smoke sensor', 'lpg ควัน'], 'flame-sensor': ['Flame fire sensor', 'ไฟไหม้'],
+    'small-sound-sensor': ['Sound microphone sensor (small)', 'mic noise'], 'big-sound-sensor': ['Sound microphone sensor (big)', 'mic noise'], 'ntc-temperature-sensor': ['NTC thermistor temperature sensor', 'temp'],
+    'heart-beat-sensor': ['Heart beat pulse sensor', 'bpm'], 'tilt-switch': ['Tilt switch sensor', 'เอียง'], mpu6050: ['MPU6050 gyroscope accelerometer', 'imu motion ไจโร'],
+    'iotf-ph': ['pH sensor water acidity', 'กรด ด่าง น้ำ'], 'iotf-tds': ['TDS water quality sensor', 'ppm น้ำ คุณภาพน้ำ'], 'iotf-dht11': ['DHT11 temperature humidity sensor', 'temp'],
+    'iotf-ds18b20': ['DS18B20 waterproof temperature sensor', 'onewire temp probe'], 'iotf-soil': ['Soil moisture sensor', 'hygrometer plant ดิน ต้นไม้'], 'iotf-rain': ['Rain sensor', 'raindrop water ฝน'],
+    'iotf-waterlevel': ['Water level sensor', 'tank น้ำ'], 'iotf-mq135': ['MQ-135 air quality gas sensor', 'co2 pollution มลพิษ'], 'iotf-ir-obstacle': ['IR obstacle avoidance sensor', 'infrared proximity'],
+    'iotf-line': ['TCRT5000 line tracking sensor', 'line follower robot infrared'], 'iotf-touch': ['TTP223 touch sensor', 'capacitive button สัมผัส'], 'iotf-reed': ['Reed switch magnetic sensor', 'door magnet ky-021 ประตู'],
+    'iotf-sw420': ['SW-420 vibration sensor', 'shake สั่น'], 'iotf-bme280': ['BME280 temperature humidity pressure sensor', 'barometer altitude'], 'iotf-bmp280': ['BMP280 pressure sensor', 'barometer altitude temperature'],
+    'iotf-bh1750': ['BH1750 light intensity lux sensor', 'brightness แสง'], 'iotf-pms5003': ['PMS5003 PM2.5 dust sensor', 'air quality particulate pm10'], 'iotf-acs712': ['ACS712 current sensor', 'amp ampere กระแสไฟ'],
+    'iotf-pzem004t': ['PZEM-004T energy power meter', 'voltage current watt kwh ไฟฟ้า มิเตอร์'], 'iotf-yfs201': ['YF-S201 water flow sensor', 'flow meter'], 'iotf-max30102': ['MAX30102 heart rate SpO2 oximeter', 'pulse oxygen'],
+    'iotf-salinity': ['Salinity sensor water salt', 'conductivity ec seawater เกลือ เค็ม น้ำทะเล'], 'iotf-loadcell': ['Load cell weight sensor', 'scale ชั่งน้ำหนัก'],
+    pushbutton: ['Push button', 'switch กด'], 'pushbutton-6mm': ['Push button 6mm', 'tactile switch'], 'slide-switch': ['Slide switch', 'toggle'], potentiometer: ['Potentiometer knob', 'variable resistor ตัวต้านทานปรับค่า ลูกบิด'],
+    'slide-potentiometer': ['Slide potentiometer fader', 'variable resistor'], 'analog-joystick': ['Analog joystick', 'จอยสติ๊ก'], 'membrane-keypad': ['Keypad 4x4 membrane', 'keyboard ปุ่มตัวเลข'],
+    'ky-040': ['Rotary encoder KY-040', 'knob'], 'dip-switch-8': ['DIP switch 8', 'สวิตช์'], 'ir-remote': ['IR remote control', 'infrared รีโมต'], 'rotary-dialer': ['Rotary phone dialer', 'โทรศัพท์'],
+    'iotf-breadboard': ['Breadboard half 400', 'protoboard โปรโตบอร์ด'], 'iotf-breadboard-full': ['Breadboard full 830', 'protoboard โปรโตบอร์ด'], 'iotf-breadboard-mini': ['Breadboard mini 170', 'protoboard โปรโตบอร์ด'],
+    servo: ['Servo motor SG90', 'เซอร์โว'], 'iotf-dcmotor': ['DC motor TT gear motor', 'wheel robot car ล้อ'], 'iotf-pump': ['Water pump DC', 'watering ปั๊ม รดน้ำ'], 'iotf-vibmotor': ['Vibration motor', 'buzz haptic'],
+    'iotf-l298n': ['L298N motor driver H-bridge', 'dual dc motor'], 'iotf-l9110s': ['L9110S motor driver H-bridge', 'dc motor'], 'iotf-28byj48': ['28BYJ-48 stepper motor ULN2003', 'step motor'],
+    'iotf-a4988': ['A4988 stepper driver', 'step dir nema'], 'stepper-motor': ['Stepper motor NEMA 17', 'step motor สเต็ปเปอร์'], 'biaxial-stepper': ['Biaxial stepper motor', 'step'],
+    'iotf-relay4': ['Relay module 4 channel', 'switch รีเลย์'], 'ks2e-m-dc5': ['Relay KS2E', 'switch รีเลย์'], resistor: ['Resistor', 'ohm โอห์ม'], hx711: ['HX711 load cell amplifier', 'weight scale'],
+    'iotf-rc522': ['RFID RC522 card reader', 'nfc บัตร'], 'iotf-neo6m': ['GPS NEO-6M', 'location พิกัด'], 'iotf-sx1278': ['LoRa SX1278 Ra-02', 'radio wireless ไร้สาย'], ds1307: ['RTC DS1307 real time clock', 'นาฬิกา เวลา'],
+    'microsd-card': ['microSD card module', 'storage file เก็บไฟล์'], 'ir-receiver': ['IR receiver', 'infrared remote รีโมต']
+  };
+  Object.entries(EN).forEach(([k, [en, kw]]) => { if (P[k]) { P[k].en = en; P[k].kw = kw; } });
+  // one lowercase string to search in: Thai name, English name, extra words, id and category
+  Object.values(P).forEach((d) => { d.search = [d.name, d.en, d.kw, d.key, d.cat].filter(Boolean).join(' ').toLowerCase(); });
 
   const CATS = ['บอร์ด', 'เบรดบอร์ด', 'เซ็นเซอร์', 'จอแสดงผล', 'ไฟและเสียง', 'อินพุต', 'มอเตอร์', 'โมดูล'];
 

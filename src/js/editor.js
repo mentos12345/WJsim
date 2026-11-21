@@ -1009,22 +1009,26 @@
   ed.renderProps = renderProps;
   const fmt = (v, step) => (+v).toFixed(step < 1 ? (String(step).split('.')[1] || '').length : 0);
   function simLabel(k) {
-    return { temp: 'อุณหภูมิ', hum: 'ความชื้น', distance: 'ระยะทาง', motion: 'มีการเคลื่อนไหว', level: 'ระดับ', bpm: 'ชีพจร', tilted: 'เอียง', ph: 'ค่า pH', ppm: 'TDS', weight: 'น้ำหนัก', lat: 'ละติจูด', lng: 'ลองจิจูด', sats: 'ดาวเทียม', ax: 'Accel X', ay: 'Accel Y', az: 'Accel Z', gx: 'Gyro X', gy: 'Gyro Y', gz: 'Gyro Z', pressure: 'ความกดอากาศ', lux: 'ความสว่าง', pm1: 'PM1.0', pm25: 'PM2.5', pm10: 'PM10', current: 'กระแส', voltage: 'แรงดัน', pf: 'Power Factor', freq: 'ความถี่', flow: 'อัตราการไหล', spo2: 'SpO2', finger: 'วางนิ้ว', black: 'เส้นดำ', detect: 'ตรวจพบ' }[k] || k;
+    return { temp: 'อุณหภูมิ', hum: 'ความชื้น', distance: 'ระยะทาง', motion: 'มีการเคลื่อนไหว', level: 'ระดับ', bpm: 'ชีพจร', tilted: 'เอียง', ph: 'ค่า pH', ppm: 'TDS', weight: 'น้ำหนัก', lat: 'ละติจูด', lng: 'ลองจิจูด', sats: 'ดาวเทียม', ax: 'Accel X', ay: 'Accel Y', az: 'Accel Z', gx: 'Gyro X', gy: 'Gyro Y', gz: 'Gyro Z', pressure: 'ความกดอากาศ', lux: 'ความสว่าง', pm1: 'PM1.0', pm25: 'PM2.5', pm10: 'PM10', current: 'กระแส', voltage: 'แรงดัน', pf: 'Power Factor', freq: 'ความถี่', flow: 'อัตราการไหล', spo2: 'SpO2', finger: 'วางนิ้ว', ppt: 'ความเค็ม', black: 'เส้นดำ', detect: 'ตรวจพบ' }[k] || k;
   }
 
   /* ---------- palette ---------- */
   const CAT_ICON = { 'บอร์ด': '#4772b3', 'เบรดบอร์ด': '#d9d4c3', 'เซ็นเซอร์': '#3cb371', 'จอแสดงผล': '#22a6c9', 'ไฟและเสียง': '#e87d0d', 'อินพุต': '#c084fc', 'มอเตอร์': '#e5484d', 'โมดูล': '#b8b8b8' };
   ed.renderPalette = function () {
     const q = $('partSearch').value.trim().toLowerCase(), basic = ed.isBasic();
-    const list = Object.values(P).filter((d) => (!basic || d.level === 'basic') && (!q || d.name.toLowerCase().includes(q) || d.key.includes(q)));
+    // every word typed must appear (Thai or English name, extra words, id), so "soil", "temp sensor" or "มอเตอร์" all work
+    const words = q.split(/\s+/).filter(Boolean).map((w) => w.replace(/[-_]/g, ''));
+    const hay = (d) => (d.search || (d.name + ' ' + d.key).toLowerCase()).replace(/[-_]/g, '');
+    const list = Object.values(P).filter((d) => (!basic || d.level === 'basic') && words.every((w) => hay(d).includes(w)));
     $('paletteHint').textContent = basic ? `Basic: ${list.length} ชิ้น (ต่อง่าย) · Advanced มีทั้งหมด ${Object.keys(P).length} ชิ้น` : `Advanced: ${list.length} ชิ้น`;
     let h = '';
     IOTF.CATS.forEach((c) => {
       const items = list.filter((d) => d.cat === c);
       if (!items.length) return;
-      h += `<div class="cat"><h5>${c}</h5>` + items.map((d) => `<div class="pitem" data-type="${d.key}" title="ลากลงพื้นที่ทำงาน หรือดับเบิลคลิก"><span class="ico" style="--c:${CAT_ICON[c]}"></span><span class="nm">${d.name}</span>${!basic && d.level !== 'basic' ? '<span class="lvl">ADV</span>' : ''}</div>`).join('') + '</div>';
+      h += `<div class="cat"><h5>${c}</h5>` + items.map((d) => `<div class="pitem" data-type="${d.key}" title="ลากลงพื้นที่ทำงาน หรือดับเบิลคลิก"><span class="ico" style="--c:${CAT_ICON[c]}"></span><span class="nm">${d.name}${q && d.en && !/^[\x00-\x7f]*$/.test(d.name) ? `<small>${d.en}</small>` : ''}</span>${!basic && d.level !== 'basic' ? '<span class="lvl">ADV</span>' : ''}</div>`).join('') + '</div>';
     });
-    $('partList').innerHTML = h || '<p class="muted small">ไม่พบอุปกรณ์</p>';
+    const advOnly = basic && q ? Object.values(P).filter((d) => d.level !== 'basic' && words.every((w) => hay(d).includes(w))).length : 0;
+    $('partList').innerHTML = h || `<p class="muted small">ไม่พบอุปกรณ์${advOnly ? ` ในโหมด Basic (มีในโหมด Advanced ${advOnly} ชิ้น)` : ''}</p>`;
   };
   // add a part in the middle of the visible stage (double-click, or a tap on a phone/tablet)
   ed.addAtCenter = function (type) {
