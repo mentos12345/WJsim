@@ -1,6 +1,6 @@
 /* WJSIM — parts registry
  * 50 parts come from wokwi-elements (MIT, (c) 2020 Uri Shaked).
- * 33 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay, 19 sensors, 7 motors/drivers) are original drawings (MIT, WJSIM contributors).
+ * 36 parts (pH, TDS, load cell, RC522, NEO-6M, SX1278, 4-ch relay, 19 sensors, 7 motors/drivers, 3 breadboards) are original drawings (MIT, WJSIM contributors).
  */
 window.IOTF = window.IOTF || {};
 (function () {
@@ -413,6 +413,51 @@ window.IOTF = window.IOTF || {};
     }
   });
 
+  /* ---------- breadboards (holes on a 0.1 inch = 9.6 px pitch, the same as the parts' pins) ---------- */
+  const PITCH = 9.6;
+  // geometry shared by the drawing and by the editor (which holes are joined, which hole is under a pin)
+  function breadboard(cols, railGroups) {
+    const X0 = 16, rails = railGroups > 0;
+    const top = rails ? 46 : 18;                                   // row a
+    const rowsY = {}; 'abcde'.split('').forEach((r, i) => { rowsY[r] = top + i * PITCH; });
+    'fghij'.split('').forEach((r, i) => { rowsY[r] = top + 7 * PITCH + i * PITCH; });   // the channel is 3 pitches wide
+    const railY = rails ? { TP: 12, TN: 12 + PITCH, BP: rowsY.j + 2.4 * PITCH + PITCH, BN: rowsY.j + 2.4 * PITCH } : {};
+    const W = X0 * 2 + (cols - 1) * PITCH, H = rails ? railY.BP + 12 : rowsY.j + 18;
+    const railX = (k) => { const g = Math.floor(k / 5), h = k % 5; const span = (railGroups * 6 - 2) * PITCH; return X0 + ((cols - 1) * PITCH - span) / 2 + (g * 6 + h) * PITCH; };
+    const pins = [];
+    for (let c = 1; c <= cols; c++) Object.keys(rowsY).forEach((r) => pins.push({ name: r + c, x: X0 + (c - 1) * PITCH, y: rowsY[r] }));
+    if (rails) ['TP', 'TN', 'BN', 'BP'].forEach((k) => { for (let i = 0; i < railGroups * 5; i++) pins.push({ name: k + (i + 1), x: railX(i), y: railY[k] }); });
+    const g = {
+      cols, W, H, pins, rowsY, railY, railX, railGroups, X0,
+      // the connected strip a hole belongs to: one column of a–e, one of f–j, or a whole rail
+      strip(name) { const m = /^([a-j])(\d+)$/.exec(name); if (m) return ('abcde'.includes(m[1]) ? 'U' : 'D') + m[2]; const r = /^(TP|TN|BP|BN)\d+$/.exec(name); return r ? r[1] : null; },
+      // the hole at a point in the board's own coordinates (within tol px), or null
+      holeAt(x, y, tol = 3.6) {
+        for (const [r, ry] of Object.entries(rowsY)) if (Math.abs(y - ry) <= tol) { const c = Math.round((x - X0) / PITCH) + 1; if (c >= 1 && c <= cols && Math.abs(X0 + (c - 1) * PITCH - x) <= tol) return r + c; }
+        for (const [k, ry] of Object.entries(railY)) if (Math.abs(y - ry) <= tol) { for (let i = 0; i < railGroups * 5; i++) if (Math.abs(railX(i) - x) <= tol) return k + (i + 1); }
+        return null;
+      }
+    };
+    return g;
+  }
+  const BB = { 'iotf-breadboard': breadboard(30, 5), 'iotf-breadboard-full': breadboard(63, 10), 'iotf-breadboard-mini': breadboard(17, 0) };
+  const bbSvg = (g) => {
+    let b = `<rect x="0" y="0" width="${g.W}" height="${g.H}" rx="6" fill="#f2f1ec" stroke="#cfcdc4"/>`;
+    const ch = (g.rowsY.e + g.rowsY.f) / 2;
+    b += `<rect x="4" y="${ch - 5}" width="${g.W - 8}" height="10" rx="2" fill="#dddbd2"/>`;
+    if (g.railGroups) {
+      const line = (y, c) => `<path d="M8 ${y}H${g.W - 8}" stroke="${c}" stroke-width="1.6"/>`;
+      b += `<rect x="4" y="3" width="${g.W - 8}" height="${g.railY.TN - 3 + 9}" rx="3" fill="#ebe9e1"/><rect x="4" y="${g.railY.BN - 9}" width="${g.W - 8}" height="${g.railY.BP - g.railY.BN + 18}" rx="3" fill="#ebe9e1"/>`;
+      b += line(g.railY.TP - 7, '#d93838') + line(g.railY.TN + 7, '#2f6fd6') + line(g.railY.BN - 7, '#2f6fd6') + line(g.railY.BP + 7, '#d93838');
+      [['TP', '+', '#d93838'], ['TN', '−', '#2f6fd6'], ['BN', '−', '#2f6fd6'], ['BP', '+', '#d93838']].forEach(([k, s2, c]) => { b += t(8, g.railY[k] + 3, 8, s2, c, 'middle', 'bold') + t(g.W - 8, g.railY[k] + 3, 8, s2, c, 'middle', 'bold'); });
+    }
+    b += g.pins.map((q) => `<rect class="h" x="${(q.x - 1.8).toFixed(1)}" y="${(q.y - 1.8).toFixed(1)}" width="3.6" height="3.6" rx=".6" fill="#3d3b36"/>`).join('');
+    Object.entries(g.rowsY).forEach(([r, y]) => { b += t(6.5, y + 2.6, 6.5, r, '#9a978c', 'middle') + t(g.W - 6.5, y + 2.6, 6.5, r, '#9a978c', 'middle'); });
+    for (let c = 1; c <= g.cols; c++) if (c === 1 || c % 5 === 0) { const x = g.X0 + (c - 1) * PITCH; b += t(x, g.rowsY.a - 6, 6, String(c), '#9a978c') + t(x, g.rowsY.j + 9.5, 6, String(c), '#9a978c'); }
+    return b;
+  };
+  Object.entries(BB).forEach(([tag, g]) => { CUSTOM[tag] = { w: g.W, h: g.H, scale: 1, pins: g.pins, svg() { return bbSvg(g); } }; });
+
   class IotfPart extends HTMLElement {
     connectedCallback() {
       if (this._init) return;
@@ -577,6 +622,9 @@ window.IOTF = window.IOTF || {};
   def('rotary-dialer', { name: 'Rotary Dialer', cat: 'อินพุต', kind: 'dialer' });
 
   // motors
+  // breadboards: holes joined in strips; parts whose pins sit on holes are connected through them
+  [['iotf-breadboard', 'Breadboard ครึ่งแผ่น (400 รู)'], ['iotf-breadboard-full', 'Breadboard เต็มแผ่น (830 รู)'], ['iotf-breadboard-mini', 'Breadboard มินิ (170 รู)']]
+    .forEach(([k, name]) => def(k, { tag: k, name, cat: 'เบรดบอร์ด', kind: 'breadboard', level: 'basic', geom: BB[k] }));
   def('servo', { name: 'Servo Motor', cat: 'มอเตอร์', kind: 'servo', level: 'basic', sig: [['PWM', 'pwm']] });
   const mot = (key, o) => def(key, Object.assign({ tag: key, cat: 'มอเตอร์', level: 'basic' }, o));
   mot('iotf-dcmotor', { name: 'มอเตอร์ DC (TT มีเกียร์)', kind: 'dcmotor', rpm: 200 });
@@ -601,7 +649,7 @@ window.IOTF = window.IOTF || {};
   def('microsd-card', { name: 'microSD Card', cat: 'โมดูล', kind: 'sd' });
   def('ir-receiver', { name: 'IR Receiver', cat: 'โมดูล', kind: 'irrecv' });
 
-  const CATS = ['บอร์ด', 'เซ็นเซอร์', 'จอแสดงผล', 'ไฟและเสียง', 'อินพุต', 'มอเตอร์', 'โมดูล'];
+  const CATS = ['บอร์ด', 'เบรดบอร์ด', 'เซ็นเซอร์', 'จอแสดงผล', 'ไฟและเสียง', 'อินพุต', 'มอเตอร์', 'โมดูล'];
 
   // the parts list shown in Basic is a subset; check it never contains something that needs advanced wiring
   IOTF.CUSTOM = CUSTOM;

@@ -33,11 +33,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### Original drawings (33 parts)
+### Original drawings (36 parts)
 pH Sensor, TDS Sensor, Load Cell, RFID RC522, GPS NEO-6M, LoRa SX1278, 4-channel Relay Module,
 DHT11, DS18B20, soil moisture, rain, water level, MQ-135, IR obstacle, TCRT5000, TTP223 touch, reed switch,
 SW-420, BME280, BMP280, BH1750, PMS5003, ACS712, PZEM-004T, YF-S201, MAX30102,
-TT gear motor, water pump, vibration motor, L298N, L9110S, 28BYJ-48 with ULN2003 and A4988
+TT gear motor, water pump, vibration motor, L298N, L9110S, 28BYJ-48 with ULN2003, A4988
+and breadboards (half, full, mini)
 were drawn from scratch for WJSIM (`src/js/parts.js`). Copyright (c) 2026 WJSIM Contributors, MIT License.
 No artwork from Fritzing (CC BY-SA 3.0) or from product photos was used.
 

@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
   app.pageTitle = document.title;

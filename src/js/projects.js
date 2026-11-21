@@ -44,7 +44,7 @@
   const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
   /* ---------- a small map of the circuit, drawn from the live editor ---------- */
-  const CAT_COL = { 'บอร์ด': '#e87d0d', 'เซ็นเซอร์': '#4aa3ff', 'จอแสดงผล': '#3ddc84', 'ไฟและเสียง': '#ffb020', 'อินพุต': '#c084fc', 'มอเตอร์': '#f472b6', 'โมดูล': '#22d3ee' };
+  const CAT_COL = { 'บอร์ด': '#e87d0d', 'เบรดบอร์ด': '#d9d4c3', 'เซ็นเซอร์': '#4aa3ff', 'จอแสดงผล': '#3ddc84', 'ไฟและเสียง': '#ffb020', 'อินพุต': '#c084fc', 'มอเตอร์': '#f472b6', 'โมดูล': '#22d3ee' };
   function thumbnail() {
     const ed = IOTF.editor, parts = ed.project.parts;
     if (!parts.length) return '';

@@ -264,6 +264,7 @@
     if (!sim.running) return;
     ed.project.parts.forEach((p) => {
       const d = P[p.type], e = el(p); if (!e) return;
+      if (d.kind === 'breadboard') return;
       const on = powered(p);
       if (e.q && d.tag.startsWith('iotf-')) customLook(p, d, e, on);
       switch (d.kind) {

@@ -259,6 +259,24 @@
         if (d.kind === 'loadcell') ['E+', 'E-', 'A-', 'A+'].forEach((x) => connected.add(key(p.id, x)));
       }
     });
+    // breadboards: holes in a strip are one node; a part pin sitting on a hole joins that strip
+    const plugged = {};
+    const bbs = ed.project.parts.filter((p) => P[p.type].kind === 'breadboard' && ed.els[p.id]);
+    bbs.forEach((bb) => {
+      const g = P[bb.type].geom, sk = (h) => key(bb.id, '~' + g.strip(h));
+      ed.project.wires.forEach((w) => [w.a, w.b].forEach((e) => { if (e.p === bb.id && g.strip(e.pin)) u(key(bb.id, e.pin), sk(e.pin)); }));
+      const toLocal = bbLocal(bb);
+      ed.project.parts.forEach((p) => {
+        if (p === bb || P[p.type].kind === 'breadboard' || !ed.els[p.id]) return;
+        (ed.els[p.id].el.pinInfo || []).forEach((q) => {
+          const w = pinWorld(p, q), l = toLocal(w.x, w.y), h = g.holeAt(l.x, l.y);
+          if (!h) return;
+          u(key(p.id, q.name), sk(h)); connected.add(key(p.id, q.name));
+          (plugged[bb.id] = plugged[bb.id] || new Set()).add(h);
+        });
+      });
+    });
+    ed.plugged = plugged;
     const memoPins = {};
     const api = {
       find: f, GND, VCC,
@@ -324,7 +342,7 @@
       if (direct) out.push({ lvl: 'warn', msg: `${P[p.type].name}: ต่อตรงกับขาบอร์ด ของจริงขาบอร์ดจ่ายไฟให้มอเตอร์ไม่พอ ควรต่อผ่านไดรเวอร์ L298N / L9110S หรือรีเลย์` });
     });
     ed.project.parts.forEach((p) => {
-      if (p === b || ed.isBoard(p)) return;
+      if (p === b || ed.isBoard(p) || P[p.type].kind === 'breadboard') return;
       const d = P[p.type], name = d.name, info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
       if (basic && d.level !== 'basic') out.push({ lvl: 'warn', part: p.id, msg: `${name} เป็นอุปกรณ์ของโหมด Advanced` });
       if (!basic) {
@@ -383,13 +401,24 @@
     const hit = document.createElement('div'); hit.className = 'hit';
     wrap.appendChild(el); wrap.appendChild(hit);
     if (d.kind === 'board') { const lb = document.createElement('div'); lb.className = 'blabel'; wrap.appendChild(lb); }
-    layer().appendChild(wrap);
+    if (d.kind === 'breadboard') { wrap.classList.add('bboard'); $('bbLayer').appendChild(wrap); hookStrips(p, wrap); } else layer().appendChild(wrap);
     ed.els[p.id] = { wrap, el, w: 0, h: 0 };
     el.addEventListener('pininfo-change', () => { layoutPart(p); renderWires(); });
     const done = el.updateComplete ? el.updateComplete : Promise.resolve();
     done.then(() => requestAnimationFrame(() => { layoutPart(p); renderWires(); }));
     layoutPart(p);
     hookPart(p, wrap);
+  }
+  // hovering a hole lights up every hole joined to it
+  function hookStrips(p, wrap) {
+    const g = P[p.type].geom;
+    wrap.addEventListener('pointerover', (e) => {
+      const pin = e.target.closest('.pin'); if (!pin) return;
+      const sname = g.strip(pin.dataset.pin);
+      wrap.querySelectorAll('.pin.strip').forEach((x) => x.classList.remove('strip'));
+      wrap.querySelectorAll('.pin').forEach((x) => { if (g.strip(x.dataset.pin) === sname) x.classList.add('strip'); });
+    });
+    wrap.addEventListener('pointerleave', () => wrap.querySelectorAll('.pin.strip').forEach((x) => x.classList.remove('strip')));
   }
   function applyAttrs(el, p) {
     Object.entries(p.attrs || {}).forEach(([k, v]) => { el[k] = v; });
@@ -404,19 +433,63 @@
     const r = ((p.rot || 0) % 360 + 360) % 360;
     const tr = r === 90 ? `translate(${n.h}px,0) rotate(90deg)` : r === 180 ? `translate(${n.w}px,${n.h}px) rotate(180deg)` : r === 270 ? `translate(0,${n.w}px) rotate(270deg)` : '';
     n.wrap.style.transform = `translate(${p.x}px,${p.y}px) ${tr}`;
-    // pins
-    n.wrap.querySelectorAll('.pin').forEach((x) => x.remove());
-    (n.el.pinInfo || []).forEach((q) => {
-      const d = document.createElement('div');
-      d.className = 'pin'; d.style.left = q.x + 'px'; d.style.top = q.y + 'px';
-      d.title = q.name; d.dataset.pin = q.name;
-      n.wrap.appendChild(d);
-    });
+    // pins (rebuilt only when the part's pins change, not on every move)
+    const info = n.el.pinInfo || [], sig = info.map((q) => q.name + '@' + q.x.toFixed(1) + ',' + q.y.toFixed(1)).join('|');
+    if (n.pinSig !== sig) {
+      n.pinSig = sig;
+      n.wrap.querySelectorAll('.pin').forEach((x) => x.remove());
+      const frag = document.createDocumentFragment();
+      info.forEach((q) => {
+        const d = document.createElement('div');
+        d.className = 'pin'; d.style.left = q.x + 'px'; d.style.top = q.y + 'px';
+        d.title = q.name; d.dataset.pin = q.name;
+        frag.appendChild(d);
+      });
+      n.wrap.appendChild(frag);
+    }
     markUsedPins();
   }
   function markUsedPins() {
     const used = new Set(); ed.project.wires.forEach((w) => { used.add(w.a.p + ':' + w.a.pin); used.add(w.b.p + ':' + w.b.pin); });
+    if (ed.project.parts.some((p) => P[p.type].kind === 'breadboard')) { ed.nets(); Object.entries(ed.plugged || {}).forEach(([id, set]) => set.forEach((h) => used.add(id + ':' + h))); }
     Object.entries(ed.els).forEach(([id, n]) => n.wrap.querySelectorAll('.pin').forEach((d) => d.classList.toggle('used', used.has(id + ':' + d.dataset.pin))));
+  }
+  function pinWorld(p, q) {
+    const n = ed.els[p.id], r = ((p.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
+    let x = q.x, y = q.y;
+    if (r === 90) [x, y] = [h - q.y, q.x]; else if (r === 180) [x, y] = [w - q.x, h - q.y]; else if (r === 270) [x, y] = [q.y, w - q.x];
+    return { x: p.x + x, y: p.y + y };
+  }
+  function bbLocal(bb) {
+    const n = ed.els[bb.id], r = ((bb.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
+    return (X, Y) => {
+      const x = X - bb.x, y = Y - bb.y;
+      if (r === 90) return { x: y, y: h - x };
+      if (r === 180) return { x: w - x, y: h - y };
+      if (r === 270) return { x: w - y, y: x };
+      return { x, y };
+    };
+  }
+  // after a part is dropped: if a pin is close to a hole, line the part up with the holes
+  ed.snapToBreadboard = function (p) {
+    if (P[p.type].kind === 'breadboard' || !ed.els[p.id]) return false;
+    let best = null;
+    ed.project.parts.filter((b) => P[b.type].kind === 'breadboard' && ed.els[b.id]).forEach((bb) => {
+      const g = P[bb.type].geom, toLocal = bbLocal(bb);
+      (ed.els[p.id].el.pinInfo || []).forEach((q) => {
+        const w = pinWorld(p, q), l = toLocal(w.x, w.y), hn = g.holeAt(l.x, l.y, 6); if (!hn) return;
+        const hw = ed.pinPos(bb.id, hn), d = Math.hypot(hw.x - w.x, hw.y - w.y);
+        if (!best || d < best.d) best = { d, dx: hw.x - w.x, dy: hw.y - w.y };
+      });
+    });
+    if (!best || best.d < 0.05) return !!best;
+    p.x = Math.round((p.x + best.dx) * 100) / 100; p.y = Math.round((p.y + best.dy) * 100) / 100; layoutPart(p); renderWires();
+    return true;
+  };
+  // parts with at least one pin plugged into this breadboard (they move with it)
+  function riders(bb) {
+    const g = P[bb.type].geom, toLocal = bbLocal(bb);
+    return ed.project.parts.filter((p) => p !== bb && P[p.type].kind !== 'breadboard' && ed.els[p.id] && (ed.els[p.id].el.pinInfo || []).some((q) => { const w = pinWorld(p, q), l = toLocal(w.x, w.y); return g.holeAt(l.x, l.y); }));
   }
   ed.pinPos = function (id, pin) {
     const p = ed.part(id), n = ed.els[id]; if (!p || !n) return null;
@@ -481,7 +554,7 @@
   }
   ed.renderWires = renderWires;
   function rebuild() {
-    layer().innerHTML = ''; ed.els = {};
+    layer().innerHTML = ''; $('bbLayer').innerHTML = ''; ed.els = {};
     ed.boards().forEach((b) => { if (!b.name) b.name = nextBoardName(b.type); });
     ed.project.parts.forEach(mountPart);
     markActive(); refreshBoardLabels();
@@ -542,14 +615,15 @@
       select(p.id);
       if (ed.isBoard(p)) ed.setActiveBoard(p.id);
       const start = ed.toWorld(e.clientX, e.clientY), ox = p.x, oy = p.y;
+      const carry = P[p.type].kind === 'breadboard' ? riders(p).map((q) => ({ q, x: q.x, y: q.y })) : [];
       let moved = false;
       const mv = (ev) => {
         const c = ed.toWorld(ev.clientX, ev.clientY);
         const nx = Math.round((ox + c.x - start.x) / 2) * 2, ny = Math.round((oy + c.y - start.y) / 2) * 2;
         if (!moved && Math.abs(nx - ox) + Math.abs(ny - oy) > 2) { moved = true; snapshot(); }
-        if (moved) { p.x = nx; p.y = ny; layoutPart(p); renderWires(); }
+        if (moved) { p.x = nx; p.y = ny; layoutPart(p); carry.forEach((r) => { r.q.x = r.x + nx - ox; r.q.y = r.y + ny - oy; layoutPart(r.q); }); renderWires(); }
       };
-      const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); if (moved) changed('move'); };
+      const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); if (moved) { ed.snapToBreadboard(p); changed('move'); } };
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
     }, true);
   }
@@ -734,7 +808,7 @@
   function routeAll(onlyId) {
     const G = 8, parts = ed.project.parts, rects = {};
     let X0 = 1e9, Y0 = 1e9, X1 = -1e9, Y1 = -1e9;
-    parts.forEach((p) => { const r = partRect(p); if (!r) return; rects[p.id] = r; X0 = Math.min(X0, r.x0); Y0 = Math.min(Y0, r.y0); X1 = Math.max(X1, r.x1); Y1 = Math.max(Y1, r.y1); });
+    parts.forEach((p) => { if (P[p.type].kind === 'breadboard') return; const r = partRect(p); if (!r) return; rects[p.id] = r; X0 = Math.min(X0, r.x0); Y0 = Math.min(Y0, r.y0); X1 = Math.max(X1, r.x1); Y1 = Math.max(Y1, r.y1); });
     X0 -= 80; Y0 -= 80; X1 += 80; Y1 += 80;
     const W = Math.ceil((X1 - X0) / G), H = Math.ceil((Y1 - Y0) / G);
     const owner = new Int32Array(W * H).fill(-1), used = new Float32Array(W * H);
@@ -878,7 +952,8 @@
     }
     // pin connections
     const nets = ed.nets(), info = ed.els[p.id] ? ed.els[p.id].el.pinInfo || [] : [];
-    if (d.kind !== 'board') {
+    if (d.kind === 'breadboard') h += `<div class="pinlist">รู a–e ในคอลัมน์เดียวกันต่อถึงกัน, f–j ก็เช่นกัน · แถว + และ − ต่อถึงกันทั้งแถว<br>วางขาอุปกรณ์ลงบนรูได้เลย (ระบบจัดให้ตรงรู) หรือลากสายจากรูไปที่ขาบอร์ด · ชี้ที่รูเพื่อดูว่ารูไหนต่อถึงกัน</div>`;
+    else if (d.kind !== 'board') {
       const rows = info.filter((q) => q.name === base(q.name) || !info.some((o) => o.name === base(q.name))).map((q) => {
         const n = nets.netOf(p.id, q.name), g = nets.boardPinsOn(n), many = ed.boards().length > 1;
         let to = g.length ? g.map((x) => (many ? ed.boardName(ed.part(x.board)) + ' ' : '') + x.pin.replace(/\.\d+$/, '')).join(', ') : nets.hasGnd(n) ? 'GND' : nets.hasVcc(n) ? 'VCC' : '—';
@@ -922,7 +997,7 @@
   }
 
   /* ---------- palette ---------- */
-  const CAT_ICON = { 'บอร์ด': '#4772b3', 'เซ็นเซอร์': '#3cb371', 'จอแสดงผล': '#22a6c9', 'ไฟและเสียง': '#e87d0d', 'อินพุต': '#c084fc', 'มอเตอร์': '#e5484d', 'โมดูล': '#b8b8b8' };
+  const CAT_ICON = { 'บอร์ด': '#4772b3', 'เบรดบอร์ด': '#d9d4c3', 'เซ็นเซอร์': '#3cb371', 'จอแสดงผล': '#22a6c9', 'ไฟและเสียง': '#e87d0d', 'อินพุต': '#c084fc', 'มอเตอร์': '#e5484d', 'โมดูล': '#b8b8b8' };
   ed.renderPalette = function () {
     const q = $('partSearch').value.trim().toLowerCase(), basic = ed.isBasic();
     const list = Object.values(P).filter((d) => (!basic || d.level === 'basic') && (!q || d.name.toLowerCase().includes(q) || d.key.includes(q)));
@@ -970,7 +1045,8 @@
         window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); ghost.remove();
         const r = $('stage').getBoundingClientRect();
         if (dragging && ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top && ev.clientY < r.bottom) {
-          const w = ed.toWorld(ev.clientX, ev.clientY); ed.addPart(type, w.x - 20, w.y - 15);
+          const w = ed.toWorld(ev.clientX, ev.clientY), np = ed.addPart(type, w.x - 20, w.y - 15);
+          if (np) setTimeout(() => { if (ed.snapToBreadboard(np)) changed('move'); }, 80);
         }
       };
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
