@@ -421,7 +421,8 @@
     wrap.addEventListener('pointerleave', () => wrap.querySelectorAll('.pin.strip').forEach((x) => x.classList.remove('strip')));
   }
   function applyAttrs(el, p) {
-    Object.entries(p.attrs || {}).forEach(([k, v]) => { el[k] = v; });
+    const d = P[p.type], ok = new Set(Object.keys(d.attrs || {}).concat(Object.keys(d.opts || {})));
+    Object.entries(p.attrs || {}).forEach(([k, v]) => { if (ok.has(k) && (typeof v !== 'object' || v === null)) el[k] = v; });
   }
   ed.applyAttrs = (p) => { const n = ed.els[p.id]; if (n) { applyAttrs(n.el, p); requestAnimationFrame(() => { layoutPart(p); renderWires(); }); } };
 
@@ -931,7 +932,7 @@
       if (!w) { box.hidden = true; return; }
       const pa = ed.part(w.a.p), pb = ed.part(w.b.p);
       box.hidden = false;
-      box.innerHTML = `<h3>สายไฟ</h3><div class="muted small">${P[pa.type].name} ${w.a.pin} ↔ ${P[pb.type].name} ${w.b.pin}</div>
+      box.innerHTML = `<h3>สายไฟ</h3><div class="muted small">${P[pa.type].name} ${IOTF.safety.esc(w.a.pin)} ↔ ${P[pb.type].name} ${IOTF.safety.esc(w.b.pin)}</div>
         <div class="row"><label>สี</label>${['#6b6b6b', '#e5484d', ...SIG_COLORS].map((c) => `<span data-c="${c}" style="width:16px;height:16px;border-radius:50%;background:${c};display:inline-block;cursor:pointer;outline:${c === w.color ? '2px solid #fff' : 'none'}"></span>`).join('')}</div>
         <div class="muted small" style="margin-top:6px">ลากสายเพื่อดัดเป็นมุม · ลากจุดกลมเพื่อย้าย · ดับเบิลคลิกจุดเพื่อลบ</div>
         <div class="btnrow"><button class="btn" data-act="routeone">จัดเส้นนี้อัตโนมัติ</button><button class="btn" data-act="clearone" ${(w.points || []).length ? '' : 'disabled'}>ล้างจุดหักมุม</button><button class="btn" data-act="delwire">ลบสาย</button></div>`;
@@ -957,11 +958,11 @@
       }
       h += `<div class="row"><label>${k === 'color' ? 'สี' : k === 'value' ? 'ค่า (Ω)' : k}</label><select data-attr="${k}">${list.map((v) => `<option ${p.attrs[k] == v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
     });
-    if (d.kind === 'rfid') h += `<div class="row"><label>UID บัตร</label><input data-rfid value="${p.sim.uid || 'DE AD BE EF'}"></div><div class="btnrow"><button class="btn pri" data-act="tap">แตะบัตร</button></div>`;
+    if (d.kind === 'rfid') h += `<div class="row"><label>UID บัตร</label><input data-rfid value="${IOTF.safety.esc(p.sim.uid || 'DE AD BE EF')}"></div><div class="btnrow"><button class="btn pri" data-act="tap">แตะบัตร</button></div>`;
     if (d.kind === 'sd') h += `<div class="muted small" style="margin-top:6px">ดูไฟล์ที่เขียนได้ในแท็บ "ไฟล์ใน SD card" ด้านล่าง</div>`;
     if (d.kind === 'board') {
       const ni = ed.netInfo(p), bd = ed.boardDef(p), active = ed.board() === p;
-      h += `<div class="row"><label>ชื่อบอร์ด</label><input id="boardNameInput" value="${(p.name || '').replace(/"/g, '&quot;')}"></div>`;
+      h += `<div class="row"><label>ชื่อบอร์ด</label><input id="boardNameInput" value="${IOTF.safety.esc(p.name || '')}"></div>`;
       if (bd.wifi) h += `<div class="pinlist"><b>MAC</b> ${ni.mac}<br><span class="mono">{${ni.macBytes.map((x) => '0x' + x.toString(16).toUpperCase().padStart(2, '0')).join(', ')}}</span><br><b>IP</b> ${ni.ip} (เมื่อต่อ WiFi)</div>`;
       else h += `<div class="pinlist">บอร์ดนี้ไม่มี WiFi/ESP-NOW ส่งข้อมูลหาบอร์ดอื่นได้ด้วย Serial หรือ LoRa</div>`;
       if (ed.boards().length > 1) h += `<div class="btnrow">${active ? '<span class="muted small">กำลังแก้โค้ดของบอร์ดนี้</span>' : '<button class="btn pri" data-act="editcode">แก้โค้ดของบอร์ดนี้</button>'}</div>`;

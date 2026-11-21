@@ -1,6 +1,6 @@
 // WJSIM — Electron main process
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -8,8 +8,26 @@ const isMac = process.platform === 'darwin';
 const windows = new Set();
 let pendingFile = null;
 
+const MAX_FILE = 20 * 1024 * 1024;
+// files the person picked in a dialog or opened with the app: the page may save back to these, nowhere else
+const grantedPaths = new Set();
 function readProjectFile(p) {
+  const st = fs.statSync(p);
+  if (!st.isFile() || st.size > MAX_FILE) throw new Error('ไฟล์ใหญ่เกินไปหรือไม่ใช่ไฟล์โปรเจกต์');
+  grantedPaths.add(path.resolve(p));
   return { text: fs.readFileSync(p, 'utf8'), path: p, name: path.basename(p) };
+}
+// IPC only from our own page (a file inside this app), never from an embedded frame or another site
+const APP_DIR = path.resolve(__dirname, '..', 'src');
+function fromApp(e) {
+  const f = e.senderFrame;
+  if (!f || f.parent) return false;
+  try {
+    const u = new URL(f.url);
+    if (u.protocol !== 'file:') return false;
+    const p = path.resolve(decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:)/, '$1'));
+    return p.startsWith(APP_DIR);
+  } catch (err) { return false; }
 }
 
 function createWindow(fileToOpen) {
@@ -25,8 +43,14 @@ function createWindow(fileToOpen) {
   windows.add(win);
   win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
   win.once('ready-to-show', () => win.show());
-  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // Google sign-in opens its own popup; other links go to the person's browser
+    if (/^https:\/\/([a-z0-9-]+\.)*(firebaseapp\.com|accounts\.google\.com|google\.com)\//.test(url)) return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
   win.webContents.once('did-finish-load', () => {
     if (fileToOpen) { try { win.webContents.send('open-file', readProjectFile(fileToOpen)); } catch (err) { dialog.showErrorBox('เปิดไฟล์ไม่ได้', String(err)); } }
   });
@@ -96,32 +120,37 @@ function buildMenu() {
 /* ---------- IPC ---------- */
 const PROJECT_FILTER = [{ name: 'WJSIM Project', extensions: ['iotf'] }, { name: 'JSON', extensions: ['json'] }];
 ipcMain.handle('save-project', async (e, data, filePath, defaultName) => {
+  if (!fromApp(e) || typeof data !== 'string' || data.length > MAX_FILE) return null;
   const win = BrowserWindow.fromWebContents(e.sender);
-  let p = filePath;
+  // save in place only to a file the person chose or opened; any other path asks first
+  let p = typeof filePath === 'string' && grantedPaths.has(path.resolve(filePath)) ? filePath : null;
   if (!p) {
     const r = await dialog.showSaveDialog(win, { title: 'บันทึกโปรเจกต์', defaultPath: defaultName || 'project.iotf', filters: PROJECT_FILTER });
     if (r.canceled || !r.filePath) return null;
     p = r.filePath;
+    grantedPaths.add(path.resolve(p));
   }
   fs.writeFileSync(p, data, 'utf8');
   return { path: p, name: path.basename(p) };
 });
 ipcMain.handle('open-project', async (e) => {
+  if (!fromApp(e)) return null;
   const win = BrowserWindow.fromWebContents(e.sender);
   const r = await dialog.showOpenDialog(win, { title: 'เปิดโปรเจกต์', filters: PROJECT_FILTER, properties: ['openFile'] });
   if (r.canceled || !r.filePaths.length) return null;
   return readProjectFile(r.filePaths[0]);
 });
 ipcMain.handle('export-ino', async (e, text, defaultName) => {
+  if (!fromApp(e) || typeof text !== 'string' || text.length > MAX_FILE) return null;
   const win = BrowserWindow.fromWebContents(e.sender);
   const r = await dialog.showSaveDialog(win, { title: 'ส่งออกโค้ดสำหรับ Arduino IDE', defaultPath: defaultName || 'sketch.ino', filters: [{ name: 'Arduino Sketch', extensions: ['ino'] }] });
   if (r.canceled || !r.filePath) return null;
   fs.writeFileSync(r.filePath, text, 'utf8');
   return { path: r.filePath };
 });
-ipcMain.on('set-title', (e, title) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setTitle(String(title)); });
+ipcMain.on('set-title', (e, title) => { if (!fromApp(e)) return; const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setTitle(String(title).slice(0, 200)); });
 // the in-app MQTT/LoRa bus: forward messages to every other window so several boards can talk
-ipcMain.on('bus-send', (e, msg) => { windows.forEach((w) => { if (w.webContents !== e.sender && !w.isDestroyed()) w.webContents.send('bus', msg); }); });
+ipcMain.on('bus-send', (e, msg) => { if (!fromApp(e)) return; try { if (JSON.stringify(msg).length > 1e6) return; } catch (err) { return; } windows.forEach((w) => { if (w.webContents !== e.sender && !w.isDestroyed()) w.webContents.send('bus', msg); }); });
 
 /* ---------- app lifecycle ---------- */
 const fileArg = (argv) => argv.slice(1).find((a) => /\.(iotf)$/i.test(a) && fs.existsSync(a));
@@ -135,6 +164,9 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on('open-file', (e, p) => { e.preventDefault(); if (app.isReady()) createWindow(p); else pendingFile = p; });
   app.whenReady().then(() => {
+    // no camera, microphone, location, notifications or other device access for pages
+    session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
+    session.defaultSession.setPermissionCheckHandler(() => false);
     buildMenu();
     createWindow(pendingFile || fileArg(process.argv));
     app.on('activate', () => { if (!windows.size) createWindow(); });

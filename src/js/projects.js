@@ -165,7 +165,7 @@
       return;
     }
     if (!list.length) { grid.innerHTML = `<div class="dempty"><p class="muted">ไม่พบโปรเจกต์ที่ตรงกับ "${esc(query)}"</p></div>`; return; }
-    grid.innerHTML = list.map((r) => `<article class="pcard ${r.id === curId ? 'cur' : ''}" data-id="${r.id}" tabindex="0">
+    grid.innerHTML = list.map((r) => `<article class="pcard ${r.id === curId ? 'cur' : ''}" data-id="${esc(r.id)}" tabindex="0">
       <div class="pthumb">${r.thumb || ''}${r.id === curId ? '<span class="pnow">เปิดอยู่</span>' : ''}</div>
       <div class="pbody"><div class="pname" title="${esc(r.name)}">${esc(r.name)}</div>
         <div class="pmeta"><span class="lv ${r.mode === 'advanced' ? 'a' : ''}">${r.mode === 'advanced' ? 'Advanced' : 'Basic'}</span><span>${esc(r.board)}</span><span>${r.parts} ชิ้น</span></div>

@@ -37,7 +37,7 @@
       if (m[0] === "'") v = '"' + m.slice(1, -1).replace(/"/g, '\\"') + '"';
       lits.push(v); return '\u0001' + (lits.length - 1) + '\u0002';
     });
-    return { out, restore: (x) => x.replace(/\u0001(\d+)\u0002/g, (_, i) => lits[+i]) };
+    return { out, lits, restore: (x) => x.replace(/\u0001(\d+)\u0002/g, (_, i) => lits[+i]) };
   }
 
 
@@ -109,6 +109,20 @@
   }
   const bracesToArrays = (s) => s.replace(/\{/g, '[').replace(/\}/g, ']');
 
+  // C++ sketches have no business reaching the page or JavaScript's object plumbing; refuse code
+  // that tries (it would otherwise run with the page's rights when someone opens a shared project)
+  // (plain names like window or fetch are already out of reach: the sketch's scope only holds its own environment)
+  const BLOCKED_NAMES = /\b(this|__iotfProgram)\b|\bimport\s*\(/;
+  const BLOCKED_MEMBERS = /\.\s*(constructor|__proto__|prototype|__defineGetter__|__defineSetter__|__lookupGetter__|__lookupSetter__|caller|callee)\b/;
+  const BLOCKED_STRINGS = /^(constructor|__proto__|prototype|__defineGetter__|__defineSetter__|__lookupGetter__|__lookupSetter__|caller|callee)$/;
+  function guard(s, P) {
+    let m = BLOCKED_MEMBERS.exec(s);
+    if (m) throw new TranspileError(`ใช้ '.${m[1]}' ในโค้ดจำลองไม่ได้`, lineAt(s, m.index));
+    m = BLOCKED_NAMES.exec(s);
+    if (m) throw new TranspileError(`ใช้ '${(m[1] || 'import')}' ในโค้ดจำลองไม่ได้ (สงวนไว้เพื่อความปลอดภัย)`, lineAt(s, m.index));
+    const bad = (P.lits || []).find((l) => BLOCKED_STRINGS.test(String(l).slice(1, -1)));
+    if (bad) throw new TranspileError(`ใช้ข้อความ ${bad} ในโค้ดจำลองไม่ได้`, 1);
+  }
   function transpile(src) {
     let s = stripComments(src.replace(/\r\n?/g, '\n'));
     const userTypes = [], typeAlias = {};
@@ -124,6 +138,7 @@
     }).join('\n');
 
     const P = protect(s); s = P.out;
+    guard(s, P);
 
     lintSemicolons(s);
     s = hoistStatics(s);

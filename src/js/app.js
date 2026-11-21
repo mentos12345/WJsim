@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const ed = IOTF.editor, sim = IOTF.sim, iot = IOTF.iot, blocks = IOTF.blocks;
   const host = window.iotfHost || null;
-  const VERSION = '1.6.0';
+  const VERSION = '1.6.1';
   const app = { path: null, isDirty: false, cm: null };
   IOTF.app = app;
   app.pageTitle = document.title;
@@ -16,6 +16,9 @@
   function boardPart(boardKey) { return { id: 'board', type: IOTF.BOARDS[boardKey].tag, x: 40, y: 40, rot: 0, attrs: {}, sim: {} }; }
 
   function openProject(p, opts = {}) {
+    p = IOTF.safety.cleanProject(p); // whatever its source, a project is checked before any of it reaches the page
+    if (p.droppedParts) toast(`ข้ามอุปกรณ์ที่ไม่รู้จัก ${p.droppedParts} ชิ้น`);
+    delete p.droppedParts;
     sim.stop(true);
     if (!p.parts.some((q) => IOTF.PARTS[q.type] && IOTF.PARTS[q.type].kind === 'board')) p.parts.unshift(boardPart('esp32'));
     p.widgets = p.widgets || []; p.sdFiles = p.sdFiles || {};
@@ -58,7 +61,7 @@
     const box = $('boardSwitch'), bs = ed.boards();
     box.hidden = bs.length < 2;
     if (bs.length < 2) { box.innerHTML = ''; return; }
-    box.innerHTML = '<span class="muted small">โค้ดของ</span>' + bs.map((b) => `<button class="chip ${b === ed.board() ? 'on' : ''}" data-id="${b.id}">${ed.boardName(b).replace(/[&<>"]/g, '')}</button>`).join('');
+    box.innerHTML = '<span class="muted small">โค้ดของ</span>' + bs.map((b) => `<button class="chip ${b === ed.board() ? 'on' : ''}" data-id="${IOTF.safety.esc(b.id)}">${IOTF.safety.esc(ed.boardName(b))}</button>`).join('');
     box.querySelectorAll('button').forEach((x) => x.onclick = () => ed.setActiveBoard(x.dataset.id));
   }
   // C++ for every board, for running them together
@@ -115,7 +118,7 @@
     const errs = list.filter((c) => c.lvl === 'err').length, warns = list.filter((c) => c.lvl === 'warn').length;
     const b = $('checkBadge');
     b.hidden = !(errs || warns); b.textContent = errs || warns; b.className = 'badge' + (errs ? '' : ' warn');
-    $('checkList').innerHTML = list.map((c, i) => `<div class="check ${c.lvl}" data-i="${i}"><span class="ic">${c.lvl === 'err' ? '!' : c.lvl === 'warn' ? '!' : '✓'}</span><span>${c.msg}</span></div>`).join('');
+    $('checkList').innerHTML = list.map((c, i) => `<div class="check ${c.lvl}" data-i="${i}"><span class="ic">${c.lvl === 'err' ? '!' : c.lvl === 'warn' ? '!' : '✓'}</span><span>${IOTF.safety.esc(c.msg)}</span></div>`).join('');
     $('checkList').querySelectorAll('.check').forEach((d) => d.onclick = () => { const c = list[+d.dataset.i]; if (c.part) ed.select(c.part); });
     document.querySelectorAll('.part.err').forEach((x) => x.classList.remove('err'));
     list.filter((c) => c.lvl === 'err' && c.part && ed.els[c.part]).forEach((c) => ed.els[c.part].wrap.classList.add('err'));
@@ -186,8 +189,22 @@
   }
 
   /* ---------- run ---------- */
+  // the first run of hand-written code from a file someone else made
+  function confirmTrust() {
+    return new Promise((resolve) => {
+      const m = $('modal'), dlg = $('dialog');
+      dlg.innerHTML = `<h2>รันโค้ดจากไฟล์นี้?</h2><p>โปรเจกต์นี้เปิดมาจากไฟล์ และมีโค้ด C++ ที่เขียนไว้แล้ว โค้ดจำลองทำงานในแอปนี้ ถ้าไม่แน่ใจว่าใครเขียน ให้ดูโค้ดในแท็บ C++ ก่อนกดรัน</p>
+        <div class="foot"><button class="btn" id="trustNo">ยังไม่รัน</button><button class="btn" id="trustLook">ดูโค้ดก่อน</button><button class="btn primary" id="trustYes">เชื่อถือและรัน</button></div>`;
+      m.hidden = false;
+      const done = (v) => { app.onModalClose = null; m.hidden = true; resolve(v); };
+      app.onModalClose = () => resolve(false);
+      $('trustYes').onclick = () => done(true); $('trustNo').onclick = () => done(false);
+      $('trustLook').onclick = () => { done(false); const t = document.querySelector('[data-tab="code"]'); if (t) t.click(); };
+    });
+  }
   async function toggleRun() {
     if (sim.running) { sim.stop(); updateRunBtn(); return; }
+    if (ed.project.untrusted) { if (!(await confirmTrust())) return; delete ed.project.untrusted; app.dirty(); }
     clearErrMarks();
     const checks = renderChecks();
     const errs = checks.filter((c) => c.lvl === 'err');
@@ -234,8 +251,11 @@
   }
   function loadFromText(text, path, name) {
     try {
+      if (text.length > 20e6) throw new Error('ไฟล์ใหญ่เกินไป');
       const p = JSON.parse(text);
       if (!p || !Array.isArray(p.parts)) throw new Error('ไม่ใช่ไฟล์โปรเจกต์ WJSIM');
+      // C++ written by someone else: ask before running it the first time
+      if (IOTF.safety.hasOwnCode(p)) p.untrusted = true;
       p.name = p.name && p.name !== 'ไม่มีชื่อ' ? p.name : (name || 'project').replace(/\.(iotf|json)$/i, '');
       openProject(p, { path });
       if (IOTF.projects) IOTF.projects.hide();

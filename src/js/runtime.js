@@ -1176,12 +1176,25 @@
       end() { } errorToString(c) { return c === -1 ? 'connection refused' : c === -11 ? 'read timeout' : 'error ' + c; }
     };
 
-    // unknown ALL_CAPS constants resolve to 0 (with a warning) so library flags don't crash the sketch
+    // The sketch only sees this environment and a few plain JS built-ins, never the page
+    // (window, document, fetch, storage, the desktop bridge...). Unknown ALL_CAPS constants
+    // resolve to 0 with a warning so library flags don't crash the sketch.
     return new Proxy(env, {
-      has(t, k) { if (typeof k !== 'string') return false; if (k in t) return true; if (/^[A-Z][A-Z0-9_]{2,}$/.test(k) && !(k in window)) { warn('k' + k, `ไม่รู้จักค่าคงที่ ${k} ใช้ค่า 0 แทน`); t[k] = 0; return true; } return false; },
-      get(t, k) { return t[k]; }
+      has(t, k) { return typeof k === 'string' && !JS_BUILTINS.has(k); },
+      get(t, k) {
+        if (k === Symbol.unscopables) return undefined;
+        if (k in t) return t[k];
+        if (typeof k === 'string' && /^[A-Z][A-Z0-9_]{2,}$/.test(k)) { warn('k' + k, `ไม่รู้จักค่าคงที่ ${k} ใช้ค่า 0 แทน`); t[k] = 0; return 0; }
+        throw new ReferenceError(String(k) + ' is not defined');
+      },
+      set(t, k, v) { t[k] = v; return true; } // a name assigned without a declaration stays inside the sketch
     });
   }
+  // plain JavaScript the transpiled sketch may use; everything else is looked up in the sketch's environment
+  const JS_BUILTINS = new Set(['Math', 'JSON', 'Number', 'String', 'Boolean', 'Array', 'Object', 'Promise', 'Date', 'Symbol', 'Map', 'Set',
+    'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'Infinity', 'NaN', 'undefined', 'Error', 'TypeError', 'RangeError', 'ReferenceError',
+    'Uint8Array', 'Int8Array', 'Uint16Array', 'Int16Array', 'Uint32Array', 'Int32Array', 'Float32Array', 'Float64Array', 'encodeURIComponent', 'decodeURIComponent']);
+  const SKETCH_THIS = Object.freeze(Object.create(null)); // `this` for sketch code, instead of window
 
   function nmea(s) {
     const pad = (n, w) => String(n).padStart(w, '0');
@@ -1412,7 +1425,7 @@
   async function runDevice(dev, gen) {
     try {
       const env = makeEnv(dev);
-      const prog = await dev.fn(env);
+      const prog = await dev.fn.call(SKETCH_THIS, env);
       if (!prog.setup || !prog.loop) throw Object.assign(new Error('โปรแกรมต้องมีฟังก์ชัน setup() และ loop()'), { line: 1 });
       await prog.setup();
       let last = performance.now();
