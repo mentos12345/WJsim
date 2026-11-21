@@ -70,12 +70,7 @@
     'auth/network-request-failed': 'เชื่อมต่ออินเทอร์เน็ตไม่ได้',
     'auth/operation-not-allowed': 'วิธีเข้าสู่ระบบนี้ยังไม่ได้เปิดใน Firebase (Authentication → Sign-in method)',
     'auth/account-exists-with-different-credential': 'อีเมลนี้เคยเข้าสู่ระบบด้วยวิธีอื่น ให้ใช้วิธีเดิม (เช่น Google) แล้วจะเห็นโปรเจกต์ครบ',
-    'auth/invalid-phone-number': 'เบอร์โทรไม่ถูกต้อง ใส่แบบ 0812345678 หรือ +66812345678',
-    'auth/missing-phone-number': 'กรุณาใส่เบอร์โทร',
-    'auth/invalid-verification-code': 'รหัส OTP ไม่ถูกต้อง',
-    'auth/code-expired': 'รหัส OTP หมดอายุแล้ว กดส่งรหัสใหม่',
     'auth/quota-exceeded': 'ส่ง SMS เกินโควตาของวันนี้แล้ว',
-    'auth/billing-not-enabled': 'การส่ง SMS ต้องเปิดแผน Blaze ใน Firebase ก่อน (หรือใช้เบอร์ทดสอบที่ตั้งไว้ใน Firebase)',
     'auth/captcha-check-failed': 'ตรวจสอบ reCAPTCHA ไม่ผ่าน ลองใหม่อีกครั้ง',
     'auth/unauthorized-domain': 'โดเมนนี้ยังไม่ได้อนุญาตใน Firebase (Authentication → Settings → Authorized domains)'
   };
@@ -98,15 +93,8 @@
     const GH = '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
     dlg.innerHTML = `<h2>เข้าสู่ระบบ WJSIM</h2><p class="muted small">เก็บโปรเจกต์ไว้ในคลาวด์ แล้วเปิดต่อได้ทุกเครื่อง</p>
       <div class="lprov"><button class="btn lbtn" id="lgGoogle">${G}เข้าสู่ระบบด้วย Google</button><button class="btn lbtn" id="lgGithub">${GH}เข้าสู่ระบบด้วย GitHub</button></div>
-      <div class="lsep"><span>หรือใช้อีเมล / เบอร์โทร</span></div>
-      <div class="ltabs"><button class="ltab on" data-m="in">อีเมล</button><button class="ltab" data-m="up">สมัครด้วยอีเมล</button><button class="ltab" data-m="phone">เบอร์โทร</button></div>
-      <form id="phoneForm" novalidate hidden>
-        <input id="lgPhone" class="namein" type="tel" inputmode="tel" placeholder="เบอร์มือถือ เช่น 0812345678" autocomplete="tel">
-        <input id="lgOtp" class="namein" inputmode="numeric" maxlength="6" placeholder="รหัส OTP 6 หลักจาก SMS" autocomplete="one-time-code" hidden>
-        <p id="phoneErr" class="lerr" hidden></p>
-        <div id="recap"></div>
-        <div class="foot"><span class="spacer"></span><button type="button" class="btn" id="phCancel">ยกเลิก</button><button type="submit" class="btn primary" id="phGo">ส่งรหัส OTP</button></div>
-      </form>
+      <div class="lsep"><span>หรือใช้อีเมล</span></div>
+      <div class="ltabs"><button class="ltab on" data-m="in">อีเมล</button><button class="ltab" data-m="up">สมัครด้วยอีเมล</button></div>
       <form id="loginForm" novalidate>
         <input id="lgName" class="namein" placeholder="ชื่อที่แสดง" autocomplete="name" hidden>
         <input id="lgEmail" class="namein" type="email" placeholder="อีเมล" autocomplete="email" required>
@@ -118,8 +106,6 @@
     loginMode = 'in';
     const setMode = (md) => {
       loginMode = md;
-      $('phoneForm').hidden = md !== 'phone'; $('loginForm').hidden = md === 'phone';
-      if (md === 'phone') { setTimeout(() => $('lgPhone').focus(), 20); }
       dlg.querySelectorAll('.ltab').forEach((b) => b.classList.toggle('on', b.dataset.m === md));
       $('lgName').hidden = md !== 'up'; $('lgGo').textContent = md === 'up' ? 'สมัครและเข้าสู่ระบบ' : 'เข้าสู่ระบบ';
       $('lgPass').autocomplete = md === 'up' ? 'new-password' : 'current-password'; $('lgForgot').hidden = md === 'up'; showErr('');
@@ -128,34 +114,6 @@
     $('lgGoogle').onclick = () => withProvider('google');
     $('lgGithub').onclick = () => withProvider('github');
     $('lgCancel').onclick = () => { m.hidden = true; };
-    // phone number: an SMS code, checked by an invisible reCAPTCHA first
-    let confirmation = null, verifier = null;
-    const perr = (t, ok) => { const x = $('phoneErr'); x.textContent = t; x.className = 'lerr' + (ok ? ' ok' : ''); x.hidden = !t; };
-    const intl = (v) => { const d = v.replace(/[^\d+]/g, ''); return d.startsWith('+') ? d : d.startsWith('0') ? '+66' + d.slice(1) : d.startsWith('66') ? '+' + d : d; };
-    $('phCancel').onclick = () => { m.hidden = true; };
-    $('phoneForm').onsubmit = async (ev) => {
-      ev.preventDefault();
-      const go = $('phGo'); go.disabled = true; perr('');
-      try {
-        if (!confirmation) {
-          const num = intl($('lgPhone').value.trim());
-          if (!/^\+\d{8,15}$/.test(num)) { perr(AUTH_TH['auth/invalid-phone-number']); return; }
-          auth.languageCode = 'th';
-          if (!verifier) verifier = new firebase.auth.RecaptchaVerifier('recap', { size: 'invisible' });
-          confirmation = await auth.signInWithPhoneNumber(num, verifier);
-          $('lgOtp').hidden = false; $('lgOtp').focus(); go.textContent = 'ยืนยันรหัส';
-          perr('ส่งรหัส OTP ไปที่ ' + num + ' แล้ว', true);
-        } else {
-          const code = $('lgOtp').value.replace(/\D/g, '');
-          if (code.length !== 6) { perr('ใส่รหัส OTP 6 หลัก'); return; }
-          await confirmation.confirm(code);
-          m.hidden = true;
-        }
-      } catch (e) {
-        perr(authMsg(e));
-        if (!confirmation && verifier) { try { verifier.clear(); } catch (x) { /* ignore */ } verifier = null; $('recap').innerHTML = ''; }
-      } finally { go.disabled = false; }
-    };
     $('lgForgot').onclick = async () => {
       const email = $('lgEmail').value.trim(); if (!email) { showErr('ใส่อีเมลก่อน แล้วกด "ลืมรหัสผ่าน?" อีกครั้ง'); $('lgEmail').focus(); return; }
       try { auth.languageCode = 'th'; await auth.sendPasswordResetEmail(email); showErr('ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่ ' + email + ' แล้ว (ดูในกล่องจดหมายขยะด้วย)', true); }
