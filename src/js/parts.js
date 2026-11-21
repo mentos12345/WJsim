@@ -149,6 +149,28 @@ window.IOTF = window.IOTF || {};
         return b;
       }
     },
+    'iotf-turbidity': {
+      w: 330, h: 120, scale: 0.68,
+      pins: rightPins(['VCC', 'GND', 'OUT'], 318, 40, 22, ['OUT']),
+      svg() {
+        let b = '<rect x="6" y="18" width="64" height="88" rx="10" fill="#3a3a3a" stroke="#777" stroke-width="1.5"/><rect x="14" y="10" width="48" height="16" rx="3" fill="#4a4a4a" stroke="#777"/><rect x="18" y="40" width="40" height="40" rx="5" fill="#9fd4ea"/>';
+        b += '<rect class="murk" x="18" y="40" width="40" height="40" rx="5" fill="#8a6d3b" opacity="0"/><circle cx="26" cy="60" r="4" fill="#ff6b6b"/><circle cx="50" cy="60" r="4" fill="#ddd"/>';
+        b += '<path d="M70 62C130 62 140 62 190 62" stroke="#222" stroke-width="4" fill="none"/><rect x="190" y="16" width="140" height="92" rx="6" fill="#1b56a6"/>' + trim(220, 44) + chip(212, 70, 30, 16) + '<circle class="pled" cx="262" cy="30" r="3.5" fill="#4a1414"/>';
+        b += hdr(this.pins, 306) + t(200, 102, 8, 'TURBIDITY', '#fff', 'start', 'bold');
+        return b;
+      }
+    },
+    'iotf-float': {
+      w: 200, h: 150, scale: 0.6,
+      pins: rightPins(['S', '-'], 188, 40, 24),
+      svg() {
+        let b = '<rect x="10" y="8" width="90" height="16" rx="3" fill="#e8e8e8" stroke="#aaa"/><rect x="48" y="24" width="14" height="110" rx="3" fill="#f2f2f2" stroke="#bbb"/>';
+        b += '<g class="floatpos" transform="translate(0 0)"><rect x="32" y="96" width="46" height="34" rx="10" fill="#f7f7f7" stroke="#999"/><path d="M36 113h38" stroke="#ccc"/></g>';
+        b += '<path d="M100 16C140 16 140 40 176 40M100 20C136 20 136 64 176 64" stroke="#222" stroke-width="3" fill="none"/>';
+        b += this.pins.map((p) => pad(p.x, p.y, 3.5) + t(p.x - 8, p.y + 3, 8, p.name, '#bbb', 'end')).join('') + t(55, 146, 8, 'FLOAT SWITCH', '#888', 'middle', 'bold');
+        return b;
+      }
+    },
     'iotf-mq135': {
       w: 230, h: 130, scale: 0.68,
       pins: rightPins(['VCC', 'GND', 'DO', 'AO'], 218, 32, 22, ['AO']),
@@ -595,7 +617,7 @@ window.IOTF = window.IOTF || {};
   def('ntc-temperature-sensor', { name: 'NTC วัดอุณหภูมิ', cat: 'เซ็นเซอร์', kind: 'ntc', level: 'basic', sig: [['OUT', 'analog']], sim: { temp: [25, -24, 80, 0.5, '°C'] } });
   def('heart-beat-sensor', { name: 'เซ็นเซอร์ชีพจร', cat: 'เซ็นเซอร์', kind: 'heartbeat', level: 'basic', sig: [['OUT', 'analog']], sim: { bpm: [72, 40, 180, 1, 'bpm'] } });
   def('tilt-switch', { name: 'Tilt Switch', cat: 'เซ็นเซอร์', kind: 'tilt', level: 'basic', sig: [['OUT', 'digital']], sim: { tilted: [0, 0, 1, 1, ''] } });
-  def('mpu6050', { name: 'MPU6050 Gyro/Accel', cat: 'เซ็นเซอร์', kind: 'mpu', sig: [['SDA', 'sda'], ['SCL', 'scl']], sim: { ax: [0, -20, 20, 0.1, 'm/s²'], ay: [0, -20, 20, 0.1, 'm/s²'], az: [9.8, -20, 20, 0.1, 'm/s²'], gx: [0, -250, 250, 1, '°/s'], gy: [0, -250, 250, 1, '°/s'], gz: [0, -250, 250, 1, '°/s'], temp: [26, -40, 85, 0.5, '°C'] } });
+  def('mpu6050', { name: 'MPU6050 Gyro/Accel', cat: 'เซ็นเซอร์', kind: 'mpu', level: 'basic', optional: ['XDA', 'XCL', 'AD0', 'INT'], sig: [['SDA', 'sda'], ['SCL', 'scl']], sim: { ax: [0, -20, 20, 0.1, 'm/s²'], ay: [0, -20, 20, 0.1, 'm/s²'], az: [9.8, -20, 20, 0.1, 'm/s²'], gx: [0, -250, 250, 1, '°/s'], gy: [0, -250, 250, 1, '°/s'], gz: [0, -250, 250, 1, '°/s'], temp: [26, -40, 85, 0.5, '°C'] } });
   def('iotf-ph', { tag: 'iotf-ph', name: 'pH Sensor', cat: 'เซ็นเซอร์', kind: 'ph', level: 'basic', sig: [['Po', 'analog']], sim: { ph: [7, 0, 14, 0.1, 'pH'] } });
   def('iotf-tds', { tag: 'iotf-tds', name: 'TDS Sensor', cat: 'เซ็นเซอร์', kind: 'tds', level: 'basic', sig: [['A', 'analog']], sim: { ppm: [300, 0, 1000, 5, 'ppm'] } });
   const sen = (key, o) => def(key, Object.assign({ tag: key, cat: 'เซ็นเซอร์', level: 'basic' }, o));
@@ -604,6 +626,8 @@ window.IOTF = window.IOTF || {};
   sen('iotf-soil', { name: 'เซ็นเซอร์ความชื้นในดิน', kind: 'analogmod', analogPin: 'AO', digitalPin: 'DO', invert: true, optional: ['DO'], sim: { level: [40, 0, 100, 1, '% ชื้น'] } });
   sen('iotf-rain', { name: 'เซ็นเซอร์น้ำฝน', kind: 'analogmod', analogPin: 'AO', digitalPin: 'DO', invert: true, optional: ['DO'], sim: { level: [0, 0, 100, 1, '% เปียก'] } });
   sen('iotf-waterlevel', { name: 'เซ็นเซอร์ระดับน้ำ', kind: 'analogmod', analogPin: 'S', sim: { level: [30, 0, 100, 1, '% ระดับน้ำ'] } });
+  sen('iotf-float', { name: 'ลูกลอยวัดระดับน้ำ (Float Switch)', kind: 'dsensor', outPin: 'S', activeLow: true, sim: { detect: [0, 0, 1, 1, 'น้ำถึงลูกลอย'] } });
+  sen('iotf-turbidity', { name: 'เซ็นเซอร์ความขุ่นของน้ำ (Turbidity)', kind: 'turbidity', sim: { ntu: [100, 0, 3000, 10, 'NTU'] } });
   sen('iotf-mq135', { name: 'MQ-135 คุณภาพอากาศ', kind: 'analogmod', analogPin: 'AO', digitalPin: 'DO', optional: ['DO'], sim: { level: [15, 0, 100, 1, '% มลพิษ'] } });
   sen('iotf-ir-obstacle', { name: 'IR หลบสิ่งกีดขวาง', kind: 'dsensor', outPin: 'OUT', activeLow: true, sim: { detect: [0, 0, 1, 1, 'เจอวัตถุ'] } });
   sen('iotf-line', { name: 'TCRT5000 เดินตามเส้น', kind: 'line', optional: ['AO'], sim: { black: [0, 0, 1, 1, 'อยู่บนเส้นดำ'] } });
@@ -672,15 +696,15 @@ window.IOTF = window.IOTF || {};
     dht22: ['DHT22 temperature humidity sensor', 'am2302 temp อุณหภูมิ ความชื้น'], 'hc-sr04': ['HC-SR04 ultrasonic distance sensor', 'sonar ระยะทาง'], 'pir-motion-sensor': ['PIR motion sensor', 'human detect เคลื่อนไหว'],
     'photoresistor-sensor': ['LDR light sensor photoresistor', 'brightness แสง'], 'gas-sensor': ['MQ-2 gas smoke sensor', 'lpg ควัน'], 'flame-sensor': ['Flame fire sensor', 'ไฟไหม้'],
     'small-sound-sensor': ['Sound microphone sensor (small)', 'mic noise'], 'big-sound-sensor': ['Sound microphone sensor (big)', 'mic noise'], 'ntc-temperature-sensor': ['NTC thermistor temperature sensor', 'temp'],
-    'heart-beat-sensor': ['Heart beat pulse sensor', 'bpm'], 'tilt-switch': ['Tilt switch sensor', 'เอียง'], mpu6050: ['MPU6050 gyroscope accelerometer', 'imu motion ไจโร'],
-    'iotf-ph': ['pH sensor water acidity', 'กรด ด่าง น้ำ'], 'iotf-tds': ['TDS water quality sensor', 'ppm น้ำ คุณภาพน้ำ'], 'iotf-dht11': ['DHT11 temperature humidity sensor', 'temp'],
-    'iotf-ds18b20': ['DS18B20 waterproof temperature sensor', 'onewire temp probe'], 'iotf-soil': ['Soil moisture sensor', 'hygrometer plant ดิน ต้นไม้'], 'iotf-rain': ['Rain sensor', 'raindrop water ฝน'],
-    'iotf-waterlevel': ['Water level sensor', 'tank น้ำ'], 'iotf-mq135': ['MQ-135 air quality gas sensor', 'co2 pollution มลพิษ'], 'iotf-ir-obstacle': ['IR obstacle avoidance sensor', 'infrared proximity'],
+    'heart-beat-sensor': ['Heart beat pulse sensor', 'bpm'], 'tilt-switch': ['Tilt switch sensor', 'เอียง'], mpu6050: ['MPU6050 gyroscope accelerometer', 'gyro imu motion tilt ไจโร เอียง ความเร่ง'],
+    'iotf-ph': ['pH sensor water acidity', 'กรด ด่าง น้ำ water quality คุณภาพน้ำ'], 'iotf-tds': ['TDS water quality sensor', 'ppm น้ำ คุณภาพน้ำ'], 'iotf-dht11': ['DHT11 temperature humidity sensor', 'temp'],
+    'iotf-ds18b20': ['DS18B20 waterproof temperature sensor', 'onewire temp probe water quality'], 'iotf-soil': ['Soil moisture sensor', 'hygrometer plant ดิน ต้นไม้'], 'iotf-rain': ['Rain sensor', 'raindrop water ฝน'],
+    'iotf-waterlevel': ['Water level sensor', 'tank น้ำ ระดับ'], 'iotf-float': ['Float switch water level sensor', 'tank น้ำ ระดับ ลูกลอย'], 'iotf-turbidity': ['Turbidity water quality sensor', 'ntu ขุ่น น้ำ คุณภาพน้ำ'], 'iotf-mq135': ['MQ-135 air quality gas sensor', 'co2 pollution มลพิษ'], 'iotf-ir-obstacle': ['IR obstacle avoidance sensor', 'infrared proximity'],
     'iotf-line': ['TCRT5000 line tracking sensor', 'line follower robot infrared'], 'iotf-touch': ['TTP223 touch sensor', 'capacitive button สัมผัส'], 'iotf-reed': ['Reed switch magnetic sensor', 'door magnet ky-021 ประตู'],
     'iotf-sw420': ['SW-420 vibration sensor', 'shake สั่น'], 'iotf-bme280': ['BME280 temperature humidity pressure sensor', 'barometer altitude'], 'iotf-bmp280': ['BMP280 pressure sensor', 'barometer altitude temperature'],
     'iotf-bh1750': ['BH1750 light intensity lux sensor', 'brightness แสง'], 'iotf-pms5003': ['PMS5003 PM2.5 dust sensor', 'air quality particulate pm10'], 'iotf-acs712': ['ACS712 current sensor', 'amp ampere กระแสไฟ'],
     'iotf-pzem004t': ['PZEM-004T energy power meter', 'voltage current watt kwh ไฟฟ้า มิเตอร์'], 'iotf-yfs201': ['YF-S201 water flow sensor', 'flow meter'], 'iotf-max30102': ['MAX30102 heart rate SpO2 oximeter', 'pulse oxygen'],
-    'iotf-salinity': ['Salinity sensor water salt', 'conductivity ec seawater เกลือ เค็ม น้ำทะเล'], 'iotf-loadcell': ['Load cell weight sensor', 'scale ชั่งน้ำหนัก'],
+    'iotf-salinity': ['Salinity sensor water salt', 'water quality คุณภาพน้ำ conductivity ec seawater เกลือ เค็ม น้ำทะเล'], 'iotf-loadcell': ['Load cell weight sensor', 'scale ชั่งน้ำหนัก'],
     pushbutton: ['Push button', 'switch กด'], 'pushbutton-6mm': ['Push button 6mm', 'tactile switch'], 'slide-switch': ['Slide switch', 'toggle'], potentiometer: ['Potentiometer knob', 'variable resistor ตัวต้านทานปรับค่า ลูกบิด'],
     'slide-potentiometer': ['Slide potentiometer fader', 'variable resistor'], 'analog-joystick': ['Analog joystick', 'จอยสติ๊ก'], 'membrane-keypad': ['Keypad 4x4 membrane', 'keyboard ปุ่มตัวเลข'],
     'ky-040': ['Rotary encoder KY-040', 'knob'], 'dip-switch-8': ['DIP switch 8', 'สวิตช์'], 'ir-remote': ['IR remote control', 'infrared รีโมต'], 'rotary-dialer': ['Rotary phone dialer', 'โทรศัพท์'],
@@ -694,7 +718,7 @@ window.IOTF = window.IOTF || {};
   };
   Object.entries(EN).forEach(([k, [en, kw]]) => { if (P[k]) { P[k].en = en; P[k].kw = kw; } });
   // one lowercase string to search in: Thai name, English name, extra words, id and category
-  Object.values(P).forEach((d) => { d.search = [d.name, d.en, d.kw, d.key, d.cat].filter(Boolean).join(' ').toLowerCase(); });
+  Object.values(P).forEach((d) => { d.search = [d.name, d.en, d.kw, d.key, d.cat, d.cat === 'เซ็นเซอร์' ? 'sensor' : ''].filter(Boolean).join(' ').toLowerCase(); });
 
   const CATS = ['บอร์ด', 'เบรดบอร์ด', 'เซ็นเซอร์', 'จอแสดงผล', 'ไฟและเสียง', 'อินพุต', 'มอเตอร์', 'โมดูล'];
 

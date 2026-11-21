@@ -218,6 +218,7 @@
         case 'heartbeat': if (pin === 'OUT') return V * (0.3 + 0.5 * heartWave(s.bpm)); break;
         case 'ph': if (pin === 'Po') return Math.min(V, s.ph / 3.5); break;
         case 'tds': if (pin === 'A') return Math.min(V, tdsVoltage(s.ppm)); break;
+        case 'turbidity': if (pin === 'OUT') return Math.min(V, V * (0.95 - 0.7 * s.ntu / 3000)); break; // clear water high, muddy low
         case 'salinity': if (pin === 'AO') return Math.min(V, s.ppt / 50 * 3.0); break; // 0–3.0 V = 0–50 ppt
         case 'line': if (pin === 'AO') return V * (s.black ? 0.85 : 0.08); break;
         case 'acs712': if (pin === 'OUT') return clamp(V / 2 + 0.185 * s.current, 0, V); break;
@@ -258,6 +259,8 @@
     if (p.type === 'iotf-salinity') set('.salt', 'fill', `hsl(${Math.round(200 - s.ppt * 0.4)} 75% ${Math.round(72 - s.ppt * 0.6)}%)`); // fresh: light blue, sea: deep blue
     set('.wet', 'opacity', p.type === 'iotf-rain' ? (s.level / 100 * 0.6).toFixed(2) : 0);
     if (p.type === 'iotf-waterlevel') { const h = (s.level / 100 * 62).toFixed(1); set('.water', 'y', (70 - h).toFixed(1)); set('.water', 'height', h); }
+    if (p.type === 'iotf-turbidity') set('.murk', 'opacity', (s.ntu / 3000 * 0.9).toFixed(2));
+    if (p.type === 'iotf-float') set('.floatpos', 'transform', `translate(0 ${s.detect ? -52 : 0})`);
     if (p.type === 'iotf-sw420') set('.shake', 'x', on && s.detect ? 20 + Math.round(Math.sin(performance.now() / 25) * 3) : 20);
   }
 

@@ -56,7 +56,7 @@
   def('iotf_ntc', function () { this.appendDummyInput().appendField('อุณหภูมิ NTC (°C) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_moisture', function () { this.appendDummyInput().appendField(new BL.FieldDropdown([['ความชื้นในดิน', 'SOIL'], ['ความเปียกน้ำฝน', 'RAIN']]), 'WHAT').appendField('(%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_waterlevel', function () { this.appendDummyInput().appendField('ระดับน้ำ (%) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
-  def('iotf_dsensor', function () { this.appendDummyInput().appendField('เซ็นเซอร์').appendField(new BL.FieldDropdown([['IR เจอสิ่งกีดขวาง', 'IR'], ['เส้นดำ (TCRT5000)', 'LINE'], ['ถูกแตะ (Touch)', 'TOUCH'], ['เจอแม่เหล็ก (Reed)', 'REED'], ['สั่น (SW-420)', 'VIB']]), 'WHAT').appendField('ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Boolean'); });
+  def('iotf_dsensor', function () { this.appendDummyInput().appendField('เซ็นเซอร์').appendField(new BL.FieldDropdown([['IR เจอสิ่งกีดขวาง', 'IR'], ['เส้นดำ (TCRT5000)', 'LINE'], ['ถูกแตะ (Touch)', 'TOUCH'], ['เจอแม่เหล็ก (Reed)', 'REED'], ['สั่น (SW-420)', 'VIB'], ['น้ำถึงลูกลอย (Float)', 'FLOAT']]), 'WHAT').appendField('ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Boolean'); });
   def('iotf_salinity', function () { this.appendDummyInput().appendField('ความเค็มของน้ำ (ppt) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); this.setTooltip('น้ำจืดต่ำกว่า 0.5 · น้ำกร่อย 0.5–30 · น้ำทะเลประมาณ 35 ppt (ส่วนในพันส่วน)'); });
   def('iotf_ds18b20', function () { this.appendDummyInput().appendField('อุณหภูมิ DS18B20 (°C) ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_bme', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['อุณหภูมิ (°C)', 'T'], ['ความชื้น (%)', 'H'], ['ความกดอากาศ (hPa)', 'P'], ['ความสูง (m)', 'A']]), 'WHAT').appendField('จาก').appendField(new BL.FieldDropdown([['BME280', 'BME280'], ['BMP280', 'BMP280']]), 'CHIP'); val(this, COL.sensor, 'Number'); });
@@ -66,6 +66,11 @@
   def('iotf_pzem', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['แรงดัน (V)', 'voltage'], ['กระแส (A)', 'current'], ['กำลังไฟ (W)', 'power'], ['พลังงาน (kWh)', 'energy'], ['ความถี่ (Hz)', 'frequency'], ['Power Factor', 'pf']]), 'WHAT').appendField('PZEM-004T RX ขา').appendField(pinField(), 'RX').appendField('TX ขา').appendField(pinField(), 'TX'); val(this, COL.sensor, 'Number'); this.setFieldValue && this.setFieldValue(isEsp() ? '16' : '2', 'RX'); this.setFieldValue && this.setFieldValue(isEsp() ? '17' : '3', 'TX'); });
   def('iotf_flow', function () { this.appendDummyInput().appendField('อัตราการไหล (L/min) ขา').appendField(pinField(), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_max30102', function () { this.appendDummyInput().appendField('อ่าน').appendField(new BL.FieldDropdown([['ชีพจร (bpm)', 'HR'], ['ออกซิเจนในเลือด SpO2 (%)', 'SPO2']]), 'WHAT').appendField('MAX30102'); val(this, COL.sensor, 'Number'); });
+  def('iotf_turbidity', function () { this.appendDummyInput().appendField('ความขุ่นของน้ำ (NTU) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number', 'น้ำใส ≈ 0 NTU, น้ำขุ่นมาก ≈ 3000 NTU'); });
+  def('iotf_mpu', function () {
+    this.appendDummyInput().appendField('MPU6050 ค่า').appendField(new BL.FieldDropdown([['มุมเอียงหน้า-หลัง (°)', 'PITCH'], ['มุมเอียงซ้าย-ขวา (°)', 'ROLL'], ['ความเร่ง X (m/s²)', 'AX'], ['ความเร่ง Y (m/s²)', 'AY'], ['ความเร่ง Z (m/s²)', 'AZ'], ['ไจโร X (°/s)', 'GX'], ['ไจโร Y (°/s)', 'GY'], ['ไจโร Z (°/s)', 'GZ'], ['อุณหภูมิ (°C)', 'T']]), 'WHAT');
+    val(this, COL.sensor, 'Number', 'ต่อ SDA/SCL ของ MPU6050 กับขา I2C ของบอร์ด (ESP32: SDA=D21, SCL=D22)');
+  });
   def('iotf_ph', function () { this.appendDummyInput().appendField('ค่า pH ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   def('iotf_tds', function () { this.appendDummyInput().appendField('ค่า TDS (ppm) ขา').appendField(pinField(true), 'PIN'); val(this, COL.sensor, 'Number'); });
   // outputs
@@ -238,8 +243,8 @@
   F.iotf_moisture = (b) => [`map(analogRead(${b.getFieldValue('PIN')}), 0, ${adcMax()}, 100, 0)`, O.ATOMIC];
   F.iotf_waterlevel = (b) => [`map(analogRead(${b.getFieldValue('PIN')}), 0, ${adcMax()}, 0, 100)`, O.ATOMIC];
   F.iotf_dsensor = (b) => {
-    const p = b.getFieldValue('PIN'), w = b.getFieldValue('WHAT'), low = w === 'IR' || w === 'REED';
-    pm(p, w === 'REED' ? 'INPUT_PULLUP' : 'INPUT');
+    const p = b.getFieldValue('PIN'), w = b.getFieldValue('WHAT'), low = w === 'IR' || w === 'REED' || w === 'FLOAT';
+    pm(p, w === 'REED' || w === 'FLOAT' ? 'INPUT_PULLUP' : 'INPUT');
     return [`(digitalRead(${p}) == ${low ? 'LOW' : 'HIGH'})`, O.ATOMIC];
   };
   // the module gives 0–3.0 V for 0–50 ppt
@@ -291,6 +296,19 @@
     G.setups.set('pox', 'if (!pox.begin()) Serial.println("ไม่พบ MAX30102");');
     G.helpers.set('pox', 'float iotfPox(bool spo2) {\n  pox.update();\n  return spo2 ? pox.getSpO2() : pox.getHeartRate();\n}');
     return [`iotfPox(${b.getFieldValue('WHAT') === 'SPO2' ? 'true' : 'false'})`, O.ATOMIC];
+  };
+  F.iotf_turbidity = (b) => [`constrain((0.95 - analogRead(${b.getFieldValue('PIN')}) / ${adcMax()}.0) / 0.7 * 3000.0, 0, 3000)`, O.ATOMIC];
+  F.iotf_mpu = (b) => {
+    G.inc.add('Wire.h'); G.inc.add('Adafruit_MPU6050.h'); G.inc.add('Adafruit_Sensor.h');
+    G.glob.set('mpu', 'Adafruit_MPU6050 mpu;\nsensors_event_t mpuA, mpuG, mpuT;');
+    G.setups.set('wire', 'Wire.begin();'); G.setups.set('mpu', 'if (!mpu.begin()) Serial.println("MPU6050 not found");'); serial();
+    G.helpers.set('mpu', ['float mpuRead(int what) {', '  mpu.getEvent(&mpuA, &mpuG, &mpuT);', '  switch (what) {',
+      '    case 0: return atan2(mpuA.acceleration.x, sqrt(mpuA.acceleration.y * mpuA.acceleration.y + mpuA.acceleration.z * mpuA.acceleration.z)) * 57.2958;',
+      '    case 1: return atan2(mpuA.acceleration.y, mpuA.acceleration.z) * 57.2958;',
+      '    case 2: return mpuA.acceleration.x;', '    case 3: return mpuA.acceleration.y;', '    case 4: return mpuA.acceleration.z;',
+      '    case 5: return mpuG.gyro.x * 57.2958;', '    case 6: return mpuG.gyro.y * 57.2958;', '    case 7: return mpuG.gyro.z * 57.2958;',
+      '    default: return mpuT.temperature;', '  }', '}'].join('\n'));
+    return [`mpuRead(${['PITCH', 'ROLL', 'AX', 'AY', 'AZ', 'GX', 'GY', 'GZ', 'T'].indexOf(b.getFieldValue('WHAT'))})`, O.ATOMIC];
   };
   F.iotf_ph = (b) => [`(analogRead(${b.getFieldValue('PIN')}) * ${vref().toFixed(1)} / ${adcMax()}.0 * 3.5)`, O.ATOMIC];
   F.iotf_tds = (b) => {
@@ -416,7 +434,7 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
   const txt = (t) => ({ shadow: { type: 'text', fields: { TEXT: t } } });
   function toolbox(basic) {
     const sensors = [B('iotf_dht'), B('iotf_ds18b20'), B('iotf_bme'), B('iotf_ultrasonic'), B('iotf_pir'), B('iotf_dsensor'), B('iotf_light'), B('iotf_bh1750'), B('iotf_moisture'), B('iotf_waterlevel'), B('iotf_salinity'), B('iotf_gas'), B('iotf_pms'),
-      B('iotf_pot'), B('iotf_ntc'), B('iotf_ph'), B('iotf_tds'), B('iotf_flow'), B('iotf_acs712'), B('iotf_pzem'), B('iotf_max30102'), B('iotf_button')];
+      B('iotf_pot'), B('iotf_ntc'), B('iotf_ph'), B('iotf_tds'), B('iotf_turbidity'), B('iotf_mpu'), B('iotf_flow'), B('iotf_acs712'), B('iotf_pzem'), B('iotf_max30102'), B('iotf_button')];
     return {
       kind: 'categoryToolbox',
       contents: [
