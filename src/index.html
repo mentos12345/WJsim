@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; script-src 'self' blob: https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; media-src 'self' blob:; connect-src 'self' https://*.googleapis.com; frame-src https://*.firebaseapp.com https://accounts.google.com">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; script-src 'self' blob: https://apis.google.com https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com https://avatars.githubusercontent.com; media-src 'self' blob:; connect-src 'self' https://*.googleapis.com https://www.google.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://recaptcha.google.com">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WJSIM ออนไลน์ – จำลองวงจร IoT ESP32 Arduino ฟรีบนเว็บ</title>
 <meta name="google-site-verification" content="pgYSBHdljlbdKcqsbRcqbaq6eOYYaUa8uuh8fjqzSFM">
@@ -148,7 +148,7 @@
   <div class="dwrap">
     <div class="dlogin" id="dashLogin" hidden>
       <div><b>เข้าสู่ระบบเพื่อเก็บโปรเจกต์ไว้ในคลาวด์</b><p class="muted small">เปิดต่อได้ทุกเครื่องทั้งคอม มือถือ และ iPad ไม่ต้องกลัวงานหาย</p></div>
-      <button class="btn gsign" id="dashLoginBtn">เข้าสู่ระบบด้วย Google</button>
+      <button class="btn gsign" id="dashLoginBtn">เข้าสู่ระบบ (Google, GitHub, อีเมล, เบอร์โทร)</button>
       <button class="tb" id="dashLoginSkip">ใช้แบบไม่ล็อกอิน</button>
     </div>
     <div class="dnew">

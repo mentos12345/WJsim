@@ -319,3 +319,17 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 @media (prefers-reduced-motion:reduce){#selLayer .liftwire{animation:none;stroke-dasharray:none}}
 #selLayer .taglead{stroke:#ffd166;stroke-width:1.2;fill:none}
 .pitem .nm small{display:block;color:var(--mu);font-size:10.5px;line-height:1.2}
+
+/* sign-in dialog */
+.lprov{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.lbtn{display:flex;align-items:center;justify-content:center;gap:10px;padding:9px 12px;font-size:14px}
+.lsep{display:flex;align-items:center;gap:10px;color:var(--mu);font-size:12px;margin:16px 0 10px}
+.lsep::before,.lsep::after{content:"";flex:1;height:1px;background:var(--line)}
+.ltabs{display:flex;gap:4px;background:var(--field);border-radius:8px;padding:3px}
+.ltab{flex:1;background:none;border:0;border-radius:6px;padding:6px;cursor:pointer;color:var(--mu)}
+.ltab.on{background:#3a3a3a;color:var(--tx);font-weight:700}
+#loginForm .namein{margin-top:10px}
+.lerr{margin:10px 0 0;color:#ff8a8a;font-size:13px}
+.lerr.ok{color:#6fdc8c}
+#loginForm .foot{display:flex;align-items:center;gap:8px}
+#loginForm .spacer{flex:1}
