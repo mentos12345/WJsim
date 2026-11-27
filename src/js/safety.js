@@ -43,6 +43,8 @@
         if (typeof v === 'number' || typeof v === 'boolean') p.sim[k] = typeof v === 'number' ? num(v) : v;
         else if (typeof v === 'string' && /^[\w .:-]{0,60}$/.test(v)) p.sim[k] = v; // e.g. an RFID card UID
       });
+      if (q.flipX === true) p.flipX = true;
+      if (q.flipY === true) p.flipY = true;
       if (q.name !== undefined) p.name = text(q.name, 40);
       ids.add(p.id); out.parts.push(p);
     });

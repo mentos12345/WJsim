@@ -433,7 +433,10 @@
     n.wrap.style.width = n.w + 'px'; n.wrap.style.height = n.h + 'px';
     const r = ((p.rot || 0) % 360 + 360) % 360;
     const tr = r === 90 ? `translate(${n.h}px,0) rotate(90deg)` : r === 180 ? `translate(${n.w}px,${n.h}px) rotate(180deg)` : r === 270 ? `translate(0,${n.w}px) rotate(270deg)` : '';
-    n.wrap.style.transform = `translate(${p.x}px,${p.y}px) ${tr}`;
+    // mirrored first (in the part's own frame), then turned
+    const fl = p.flipX || p.flipY ? ` translate(${p.flipX ? n.w : 0}px,${p.flipY ? n.h : 0}px) scale(${p.flipX ? -1 : 1},${p.flipY ? -1 : 1})` : '';
+    n.wrap.style.transform = `translate(${p.x}px,${p.y}px) ${tr}${fl}`;
+    n.wrap.classList.toggle('flipped', !!(p.flipX || p.flipY));
     // pins (rebuilt only when the part's pins change, not on every move)
     const info = n.el.pinInfo || [], sig = info.map((q) => q.name + '@' + q.x.toFixed(1) + ',' + q.y.toFixed(1)).join('|');
     if (n.pinSig !== sig) {
@@ -457,18 +460,19 @@
   }
   function pinWorld(p, q) {
     const n = ed.els[p.id], r = ((p.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
-    let x = q.x, y = q.y;
-    if (r === 90) [x, y] = [h - q.y, q.x]; else if (r === 180) [x, y] = [w - q.x, h - q.y]; else if (r === 270) [x, y] = [q.y, w - q.x];
+    let x = p.flipX ? w - q.x : q.x, y = p.flipY ? h - q.y : q.y;
+    if (r === 90) [x, y] = [h - y, x]; else if (r === 180) [x, y] = [w - x, h - y]; else if (r === 270) [x, y] = [y, w - x];
     return { x: p.x + x, y: p.y + y };
   }
   function bbLocal(bb) {
     const n = ed.els[bb.id], r = ((bb.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
+    const unflip = (q) => ({ x: bb.flipX ? w - q.x : q.x, y: bb.flipY ? h - q.y : q.y });
     return (X, Y) => {
       const x = X - bb.x, y = Y - bb.y;
-      if (r === 90) return { x: y, y: h - x };
-      if (r === 180) return { x: w - x, y: h - y };
-      if (r === 270) return { x: w - y, y: x };
-      return { x, y };
+      if (r === 90) return unflip({ x: y, y: h - x });
+      if (r === 180) return unflip({ x: w - x, y: h - y });
+      if (r === 270) return unflip({ x: w - y, y: x });
+      return unflip({ x, y });
     };
   }
   // after a part is dropped: if a pin is close to a hole, line the part up with the holes
@@ -496,8 +500,8 @@
     const p = ed.part(id), n = ed.els[id]; if (!p || !n) return null;
     const q = (n.el.pinInfo || []).find((x) => x.name === pin); if (!q) return null;
     const r = ((p.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
-    let x = q.x, y = q.y;
-    if (r === 90) [x, y] = [h - q.y, q.x]; else if (r === 180) [x, y] = [w - q.x, h - q.y]; else if (r === 270) [x, y] = [q.y, w - q.x];
+    let x = p.flipX ? w - q.x : q.x, y = p.flipY ? h - q.y : q.y;
+    if (r === 90) [x, y] = [h - y, x]; else if (r === 180) [x, y] = [w - x, h - y]; else if (r === 270) [x, y] = [y, w - x];
     return { x: p.x + x, y: p.y + y };
   };
   function routePath(a, b) {
@@ -695,7 +699,7 @@
   function hint(msg) {
     $('stageHint').textContent = msg || (ed.running ? 'กำลังจำลอง: กดปุ่ม/หมุนลูกบิดบนชิ้นส่วนได้ คลิกชิ้นส่วนเพื่อปรับค่าเซ็นเซอร์' :
       ed.isBasic() ? 'Basic: ลากอุปกรณ์จากด้านซ้าย แล้วคลิกขาอุปกรณ์ต่อกับขาบอร์ดเอง (ไฟเลี้ยง/กราวด์ต่อให้ในตัว) · คลิกอุปกรณ์เพื่อดูว่าต่อกับขาไหน' :
-        'Advanced: คลิกขาหนึ่งแล้วคลิกอีกขาเพื่อต่อสาย ต้องต่อไฟเลี้ยงและกราวด์เอง · R หมุน · Delete ลบ · Ctrl+Z ย้อน');
+        'Advanced: คลิกขาหนึ่งแล้วคลิกอีกขาเพื่อต่อสาย ต้องต่อไฟเลี้ยงและกราวด์เอง · R/Shift+R หมุน · H/V พลิก · Delete ลบ · Ctrl+Z ย้อน');
   }
   ed.hint = hint;
 
@@ -961,9 +965,18 @@
   };
   ed.setWireStyle = function (st) { ed.project.wireStyle = st; renderWires(); changed('style'); };
 
-  ed.rotateSel = function () {
+  // turn 90° either way (dir -1 = counter-clockwise)
+  ed.rotateSel = function (dir = 1) {
     const p = ed.part(ed.sel); if (!p || ed.running) return;
-    snapshot(); p.rot = ((p.rot || 0) + 90) % 360; layoutPart(p); renderWires(); changed('move');
+    snapshot(); p.rot = (((p.rot || 0) + 90 * (dir < 0 ? -1 : 1)) % 360 + 360) % 360; layoutPart(p); renderWires(); changed('move');
+  };
+  // mirror on the X axis (left↔right) or the Y axis (top↔bottom), as seen on screen
+  ed.flipSel = function (axis) {
+    const p = ed.part(ed.sel); if (!p || ed.running) return;
+    snapshot();
+    const turned = (p.rot || 0) % 180 !== 0, k = (axis === 'x') !== turned ? 'flipX' : 'flipY';
+    if (p[k]) delete p[k]; else p[k] = true;
+    layoutPart(p); renderWires(); changed('move');
   };
   ed.deleteSel = function () {
     if (ed.running) return;
@@ -1043,7 +1056,7 @@
       });
       if (rows.length) h += `<div class="pinlist">${rows.join('<br>')}</div>`;
     }
-    h += `<div class="btnrow">${ed.running ? '' : '<button class="btn" data-act="rot">หมุน (R)</button><button class="btn" data-act="del">ลบ</button>'}</div>`;
+    h += `<div class="btnrow">${ed.running ? '' : '<button class="btn" data-act="rotl" title="หมุนทวนเข็ม 90° (Shift+R)">⟲ หมุนซ้าย</button><button class="btn" data-act="rot" title="หมุนตามเข็ม 90° (R)">⟳ หมุนขวา</button><button class="btn" data-act="flipx" title="พลิกซ้าย-ขวา (แกน X) (H)">⇋ พลิกแนวนอน</button><button class="btn" data-act="flipy" title="พลิกบน-ล่าง (แกน Y) (V)">⇵ พลิกแนวตั้ง</button><button class="btn" data-act="del">ลบ</button>'}</div>`;
     box.innerHTML = h;
     box.querySelectorAll('[data-sim]').forEach((inp) => inp.oninput = () => {
       const k = inp.dataset.sim;
@@ -1066,7 +1079,8 @@
     box.querySelectorAll('[data-attr]').forEach((s) => s.onchange = () => { p.attrs[s.dataset.attr] = s.value; ed.applyAttrs(p); changed('style'); });
     const r = box.querySelector('[data-rfid]'); if (r) r.oninput = () => { p.sim.uid = r.value; };
     const tap = box.querySelector('[data-act=tap]'); if (tap) tap.onclick = () => { p.sim.tap = Date.now(); if (IOTF.sim) IOTF.sim.event('rfid', p); };
-    const rot = box.querySelector('[data-act=rot]'); if (rot) rot.onclick = ed.rotateSel;
+    const act = (a, f) => { const b = box.querySelector(`[data-act=${a}]`); if (b) b.onclick = f; };
+    act('rot', () => ed.rotateSel(1)); act('rotl', () => ed.rotateSel(-1)); act('flipx', () => ed.flipSel('x')); act('flipy', () => ed.flipSel('y'));
     const del = box.querySelector('[data-act=del]'); if (del) del.onclick = () => ed.removePart(p.id);
     const bn = box.querySelector('#boardNameInput'); if (bn) bn.onchange = () => { p.name = bn.value.trim() || nextBoardName(p.type); refreshBoardLabels(); changed('active'); };
     const ec = box.querySelector('[data-act=editcode]'); if (ec) ec.onclick = () => { ed.setActiveBoard(p.id); renderProps(); };
