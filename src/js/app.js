@@ -326,7 +326,7 @@
     const m = $('modal'), dlg = $('dialog');
     dlg.innerHTML = `<h2>WJSIM ${VERSION}</h2>
       <p>โปรแกรมจำลองวงจร IoT ใช้งานแบบออฟไลน์ ฟรี และเป็นโอเพนซอร์ส (MIT License)</p>
-      <h4>คีย์ลัด</h4><p class="small">Ctrl/⌘+S บันทึกลงโปรเจกต์ของฉัน · Ctrl/⌘+Shift+S บันทึกเป็นไฟล์ · Ctrl/⌘+O เปิดไฟล์ · Ctrl/⌘+N ใหม่ · Ctrl/⌘+Enter เริ่ม/หยุดจำลอง · Ctrl/⌘+Z ย้อน · R หมุนตามเข็ม · Shift+R หมุนทวนเข็ม · H พลิกแนวนอน · V พลิกแนวตั้ง · Delete ลบ · Esc ยกเลิกการต่อสาย · ล้อเมาส์ ซูม · ลากพื้นที่ว่าง เลื่อนมุมมอง</p>
+      <h4>คีย์ลัด</h4><p class="small">Ctrl/⌘+S บันทึกลงโปรเจกต์ของฉัน · Ctrl/⌘+Shift+S บันทึกเป็นไฟล์ · Ctrl/⌘+O เปิดไฟล์ · Ctrl/⌘+N ใหม่ · Ctrl/⌘+Enter เริ่ม/หยุดจำลอง · Ctrl/⌘+Z ย้อน · R หมุนชิ้นส่วน · Delete ลบ · Esc ยกเลิกการต่อสาย · ล้อเมาส์ ซูม · ลากพื้นที่ว่าง เลื่อนมุมมอง</p>
       <h4>เครดิตและสัญญาอนุญาต</h4>
       <p class="small"><b>ภาพอุปกรณ์ 50 ชิ้น</b> จาก wokwi-elements 1.9.2 © 2020 Uri Shaked — MIT License<br>
       <b>ภาพอุปกรณ์ 7 ชิ้น</b> (pH, TDS, Load Cell, RC522, NEO-6M, SX1278, Relay 4 ช่อง) วาดขึ้นใหม่สำหรับ WJSIM — MIT License<br>
@@ -438,9 +438,7 @@
       if (mod && k === 'z') { e.preventDefault(); ed.undoStep(e.shiftKey); return; }
       if (mod && k === 'y') { e.preventDefault(); ed.undoStep(true); return; }
       if (k === 'delete' || k === 'backspace') { e.preventDefault(); ed.deleteSel(); return; }
-      if (k === 'r' && !mod) { ed.rotateSel(e.shiftKey ? -1 : 1); return; }
-      if (k === 'h' && !mod) { ed.flipSel('x'); return; }
-      if (k === 'v' && !mod) { ed.flipSel('y'); return; }
+      if (k === 'r' && !mod) { ed.rotateSel(); return; }
       if (k === 'escape') { ed.cancelArm(); closeModal(); }
     });
     window.addEventListener('beforeunload', (e) => { if (app.isDirty && !host) { e.preventDefault(); e.returnValue = ''; } });
