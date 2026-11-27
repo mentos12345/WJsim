@@ -104,6 +104,10 @@
       <h4>เปิดเว็บของบอร์ด (HTTP)</h4>
       <div class="pubrow"><input id="httpUrl" placeholder="http://192.168.1.101/" value="http://192.168.1.101/"><button class="tb small" id="btnHttp">เปิด</button></div>
       <pre id="httpOut" class="log mono"></pre>
+      <div id="httpPage" hidden>
+        <div class="webbar"><span id="httpAddr" class="mono small"></span><div class="spacer"></div><button class="tb small" id="btnHttpBig" title="ขยาย/ย่อหน้าเว็บ">⤢ ขยาย</button></div>
+        <iframe id="httpFrame" sandbox="allow-same-origin allow-forms" title="หน้าเว็บจากบอร์ดที่จำลอง"></iframe>
+      </div>
       <p class="muted small">เครือข่ายจำลองอยู่ในแอป ไม่ได้ส่งข้อมูลออกอินเทอร์เน็ต วางบอร์ดหลายตัวบนวงจรเดียวกันเพื่อให้ส่งข้อมูลหากันได้ (ESP-NOW, UDP, HTTP, MQTT, LoRa) หรือเปิดหลายหน้าต่าง (เมนูไฟล์ → หน้าต่างใหม่)</p>
     </div>
     <div class="pane" id="pane-cloud" hidden>

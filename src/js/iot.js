@@ -88,14 +88,35 @@
   };
 
   /* ---------- tiny browser: send HTTP requests to boards running a WebServer ---------- */
-  iot.browse = async function (url) {
-    const out = $('httpOut'); if (!out) return;
-    if (!IOTF.sim.running) { out.textContent = 'เริ่มจำลองก่อน แล้วค่อยเปิด URL ของบอร์ด'; return; }
+  // pages that look like HTML are shown as a web page (no scripts run in it); links and forms go back to the simulated board
+  const looksHtml = (t) => /<\s*(!doctype|html|head|body|h[1-6]|p|div|a|button|form|table|ul|br)\b/i.test(t || '');
+  iot.browse = async function (url, method = 'GET', body = '') {
+    const out = $('httpOut'), page = $('httpPage'), fr = $('httpFrame'); if (!out) return;
+    if (!IOTF.sim.running) { out.hidden = false; page.hidden = true; out.textContent = 'เริ่มจำลองก่อน แล้วค่อยเปิด URL ของบอร์ด'; return; }
     if (!/^https?:\/\//.test(url)) url = 'http://' + url;
-    out.textContent = 'GET ' + url + ' …';
-    const r = await IOTF.sim.httpRequest(null, 'GET', url, '', 4000);
-    out.textContent = r.code < 0 ? `เชื่อมต่อไม่ได้ (${r.code === -11 ? 'หมดเวลา' : 'ไม่มีเซิร์ฟเวอร์ที่ ' + url}) — บอร์ดต้องต่อ WiFi และเรียก server.begin() กับ server.handleClient()` : `HTTP ${r.code}\n\n${r.body}`;
+    $('httpUrl').value = url;
+    out.hidden = false; out.textContent = method + ' ' + url + ' …';
+    const r = await IOTF.sim.httpRequest(null, method, url, body, 4000);
+    if (r.code < 0) { page.hidden = true; out.textContent = `เชื่อมต่อไม่ได้ (${r.code === -11 ? 'หมดเวลา' : 'ไม่มีเซิร์ฟเวอร์ที่ ' + url}) — บอร์ดต้องต่อ WiFi และเรียก server.begin() กับ server.handleClient()`; return; }
+    if (!looksHtml(r.body)) { page.hidden = true; out.textContent = `HTTP ${r.code}\n\n${r.body}`; return; }
+    out.hidden = true;
+    page.hidden = false; $('httpAddr').textContent = `HTTP ${r.code} · ${url}`;
+    fr.onload = () => {
+      const doc = fr.contentDocument; if (!doc) return;
+      const go = (href, m = 'GET', b = '') => { let u; try { u = new URL(href, url); } catch (e) { return; } if (u.protocol !== 'http:' && u.protocol !== 'https:') return; iot.browse(u.href, m, b); };
+      doc.addEventListener('click', (e) => {
+        const a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
+        e.preventDefault(); const h = a.getAttribute('href'); if (h && !h.startsWith('#')) go(h);
+      });
+      doc.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const f = e.target, q = new URLSearchParams(new FormData(f)).toString(), m = (f.getAttribute('method') || 'GET').toUpperCase(), act = f.getAttribute('action') || url;
+        if (m === 'POST') go(act, 'POST', q); else { const u = new URL(act, url); u.search = q; go(u.href); }
+      });
+    };
+    fr.srcdoc = r.body;
   };
+  if ($('btnHttpBig')) $('btnHttpBig').onclick = () => { const pg = $('httpPage'), big = pg.classList.toggle('big'); $('btnHttpBig').textContent = big ? '✕ ย่อ' : '⤢ ขยาย'; };
 
   /* ---------- LoRa ---------- */
   function loraLog(t) { const o = $('loraOut'); o.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`; o.scrollTop = o.scrollHeight; }

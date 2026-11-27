@@ -17,6 +17,7 @@ const cases = [
   ['PMS::DATA', '#include <PMS.h>\nPMS pms(Serial2);\nPMS::DATA d;\nvoid setup(){}\nvoid loop(){ pms.read(d); }', 'new PMS_DATA()'],
   ['Arduino Cloud types', 'CloudSwitch lamp;\nCloudTemperatureSensor t;\nvoid setup(){ ArduinoCloud.addProperty(lamp, READWRITE, ON_CHANGE, onLampChange); ArduinoCloud.addCallback(ArduinoIoTCloudEvent::CONNECT, ok); }\nvoid ok(){}\nvoid onLampChange(){}\nvoid loop(){ ArduinoCloud.update(); }', 'ArduinoCloud.addProperty(() => lamp, (__v) => { lamp = __v; }, "lamp", READWRITE'],
   ['Arduino Cloud event', 'void ok(){}\nvoid setup(){ ArduinoCloud.addCallback(ArduinoIoTCloudEvent::CONNECT, ok); }\nvoid loop(){}', 'ArduinoIoTCloudEvent.CONNECT'],
+  ['function template', 'template <typename T>\nT biggest(T a, T b) {\n  return a > b ? a : b;\n}\ntemplate<class A, class B> void show(A a, B b) { Serial.println(String(a) + b); }\nvoid setup(){ int x = biggest<int>(3, 7); float y = biggest(1.5, 0.5); show(x, y); }\nvoid loop(){}', 'biggest(3, 7)'],
 ];
 for (const [name, src, want] of cases) {
   try { const js = IOTF.transpile(src).code; if (js.includes(want)) console.log('ok  ', name); else { bad++; console.log('FAIL', name, '\n', js); } } catch (e) { bad++; console.log('FAIL', name, e.message); }

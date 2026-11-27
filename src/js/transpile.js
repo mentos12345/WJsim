@@ -3,7 +3,7 @@
  * Supported: globals/locals of primitive & library types, arrays (incl. 2-D initialisers),
  * functions, #define, enum, casts, String methods, loops, switch, F(), sprintf/dtostrf.
  * Also: plain structs (struct / typedef struct) become small JS classes, simple lambdas, ESP-NOW/UDP/HTTP helpers.
- * Not supported: class/template/namespace definitions, pointers arithmetic, references as out-params.
+ * Also function templates (type parameters become `auto`). Not supported: class/class-template/namespace definitions, pointers arithmetic, references as out-params.
  */
 (function () {
   'use strict';
@@ -189,6 +189,39 @@
       return `async (${ps.join(', ')}) => {`;
     });
 
+    // function templates: `template <typename T> T biggest(T a, T b) {…}` — JS values carry their own type, so the
+    // type parameters become `auto` inside that function and `biggest<int>(…)` calls drop the <…>
+    const tplFns = new Set();
+    s = s.replace(/\btemplate\s*<([^<>]*(?:<[^<>]*>[^<>]*)*)>/g, (m, params, at) => {
+      const names = [];
+      params.split(',').map((x) => x.trim()).filter(Boolean).forEach((x) => {
+        const pm = /^(?:typename|class)\s*(?:\.\.\.)?\s*(\w+)?(?:\s*=.*)?$/.exec(x);
+        if (pm) { if (pm[1]) names.push(pm[1]); return; }
+        throw new TranspileError(`ยังไม่รองรับ template ที่รับค่า '${x}' (ใช้ได้เฉพาะ typename/class)`, lineAt(s, at));
+      });
+      return '\u0003' + names.join(',') + '\u0003' + m.replace(/[^\n]/g, ''); // keep the line count
+    });
+    let ti;
+    while ((ti = s.indexOf('\u0003')) >= 0) {
+      const end = s.indexOf('\u0003', ti + 1), names = s.slice(ti + 1, end).split(',').filter(Boolean);
+      let rest = s.slice(end + 1);
+      const head = /^\s*(?:(?:static|inline|constexpr)\s+)*/.exec(rest)[0];
+      if (/^(class|struct)\b/.test(rest.slice(head.length))) throw new TranspileError("ยังไม่รองรับ template ของ class/struct (ใช้ได้กับฟังก์ชัน)", lineAt(s, ti));
+      // the declaration runs to the end of its body (or to ';' for a prototype)
+      let i = 0, depth = 0, stop = -1;
+      for (; i < rest.length; i++) {
+        const c = rest[i];
+        if (c === ';' && depth === 0) { stop = i + 1; break; }
+        if (c === '{') depth++;
+        if (c === '}') { depth--; if (depth === 0) { stop = i + 1; break; } }
+      }
+      if (stop < 0) stop = rest.length;
+      let decl = rest.slice(0, stop);
+      const fn = /(\w+)\s*\(/.exec(decl.replace(/\b(?:const|unsigned|signed)\b/g, ' ')); if (fn) tplFns.add(fn[1]);
+      names.forEach((n) => { decl = decl.replace(new RegExp('\\b' + n + '\\b', 'g'), 'auto'); });
+      s = s.slice(0, ti) + decl + rest.slice(stop);
+    }
+    tplFns.forEach((f) => { s = s.replace(new RegExp('\\b' + f + '\\s*<[^<>;(){}]*(?:<[^<>;(){}]*>[^<>;(){}]*)*>\\s*\\(', 'g'), f + '('); });
     // unsupported constructs (class keyword produced above for structs is allowed)
     const badRe = /\b(struct|class|template|namespace|typedef|union|operator)\b/g;
     let bad;
