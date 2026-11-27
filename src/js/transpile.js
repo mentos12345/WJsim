@@ -12,7 +12,7 @@
   const CLASSES = ['DHT', 'Servo', 'ESP32Servo', 'LiquidCrystal_I2C', 'LiquidCrystal', 'Adafruit_SSD1306', 'Adafruit_ILI9341', 'Adafruit_NeoPixel', 'WiFiClient', 'WiFiClientSecure',
     'PubSubClient', 'Adafruit_MPU6050', 'sensors_event_t', 'HX711', 'MFRC522', 'TinyGPSPlus', 'SoftwareSerial', 'HardwareSerial', 'RTC_DS1307', 'RTC_DS3231', 'DateTime', 'File',
     'Keypad', 'Stepper', 'IRrecv', 'TimeSpan', 'IPAddress', 'WebServer', 'ESP8266WebServer', 'HTTPClient', 'WiFiUDP', 'esp_now_peer_info_t',
-    'OneWire', 'DallasTemperature', 'Adafruit_BME280', 'Adafruit_BMP280', 'BH1750', 'PMS', 'PMS_DATA', 'PZEM004Tv30', 'PulseOximeter', 'MAX30105', 'AccelStepper', 'WiFiConnectionHandler'];
+    'OneWire', 'DallasTemperature', 'Adafruit_BME280', 'Adafruit_BMP280', 'BH1750', 'PMS', 'PMS_DATA', 'PZEM004Tv30', 'PulseOximeter', 'MAX30105', 'AccelStepper', 'WiFiConnectionHandler', 'ArduinoLEDMatrix'];
 
   class TranspileError extends Error { constructor(msg, line) { super(msg); this.line = line; } }
 
@@ -335,7 +335,7 @@
     // awaits
     s = s.replace(/(?<![\w.])(delay|delayMicroseconds)\s*\(/g, 'await $1(');
     s = s.replace(/(?<![\w.])yield\s*\(\s*\)/g, 'await __y()');
-    s = s.replace(/(?<![\w.])(\w+)\.(step|waitForKey|GET|POST|PUT|PATCH|sendRequest|readUntil|runToPosition|runToNewPosition)\s*\(/g, 'await $1.$2(');
+    s = s.replace(/(?<![\w.])(\w+)\.(step|waitForKey|GET|POST|PUT|PATCH|sendRequest|readUntil|runToPosition|runToNewPosition|endText)\s*\(/g, 'await $1.$2(');
     if (userFns.length) {
       const fr = new RegExp(`(?<![\\w.])(${userFns.join('|')})\\s*\\(`, 'g');
       s = s.replace(fr, (m, name, off, all) => (/function\s+$/.test(all.slice(Math.max(0, off - 12), off)) ? m : `await ${name}(`));

@@ -700,5 +700,22 @@ void onMessageChange() {
 `
   });
 
+  // ---------------- Arduino UNO R4 WiFi ----------------
+  T.push({
+    id: 'r4-matrix', mode: 'basic', board: 'unor4wifi', title: 'UNO R4 WiFi: อุณหภูมิวิ่งบน LED Matrix + ส่งขึ้นคลาวด์',
+    desc: 'Arduino UNO R4 WiFi: อ่าน DHT22 แล้วโชว์ค่าวิ่งบนจอ LED 12×8 ของบอร์ด ส่งค่าขึ้น IoT Cloud และโชว์รูปหัวใจเมื่อกดปุ่มบน Dashboard',
+    parts: [{ id: 'dht1', type: 'dht22', x: 340, y: -30 }],
+    wires: [['dht1', 'SDA', '2']],
+    cloud: {
+      vars: [{ name: 'temperature', type: 'float', perm: 'READ' }, { name: 'heart', type: 'bool' }],
+      widgets: [{ type: 'gauge', var: 'temperature', title: 'อุณหภูมิ', unit: '°C', min: 0, max: 50 }, { type: 'switch', var: 'heart', title: 'โชว์หัวใจ' }]
+    },
+    blocks: main([], [
+      cset('temperature', blk('iotf_dht', { WHAT: 'T', PIN: '2' })),
+      ifElse(blk('iotf_cloud_get', { NAME: 'heart' }), [blk('iotf_matrix_icon', { ICON: 'HEART' }), wait(1000)],
+        [blk('iotf_matrix_text', {}, { TEXT: inp(join('T=', blk('iotf_cloud_get', { NAME: 'temperature' }), 'C')) })])
+    ])
+  });
+
   IOTF.TEMPLATES = T;
 })();

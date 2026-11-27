@@ -492,6 +492,47 @@ window.IOTF = window.IOTF || {};
   };
   Object.entries(BB).forEach(([tag, g]) => { CUSTOM[tag] = { w: g.W, h: g.H, scale: 1, pins: g.pins, svg() { return bbSvg(g); } }; });
 
+  /* ---------- Arduino UNO R4 (drawn for WJSIM; header positions match the UNO so circuits carry over) ---------- */
+  const R4_TOP = [['A5.2', 87, 'SCL'], ['A4.2', 97, 'SDA'], ['AREF', 106], ['GND.1', 115.5, 'GND'], ['13', 125], ['12', 134.5], ['11', 144, '~11'], ['10', 153.5, '~10'], ['9', 163, '~9'], ['8', 173],
+    ['7', 189], ['6', 198.5, '~6'], ['5', 208, '~5'], ['4', 217.5], ['3', 227, '~3'], ['2', 236.5], ['1', 246, 'TX→1'], ['0', 255.5, 'RX←0']];
+  const R4_BOT = [['IOREF', 131], ['RESET', 140.5], ['3.3V', 150], ['5V', 160], ['GND.2', 169.5, 'GND'], ['GND.3', 179, 'GND'], ['VIN', 188.5], ['A0', 208], ['A1', 217.5], ['A2', 227], ['A3', 236.5], ['A4', 246], ['A5', 255.5]];
+  const r4Pins = () => R4_TOP.map(([n, x]) => ({ name: n, x, y: 9 })).concat(R4_BOT.map(([n, x]) => ({ name: n, x, y: 191.5 })))
+    .map((q) => Object.assign(q, { power: /^GND/.test(q.name) ? 'GND' : /^(5V|3\.3V|VIN)$/.test(q.name) ? 'VCC' : null, analog: /^A\d$/.test(q.name) }));
+  function r4Svg(wifi) {
+    const col = wifi ? '#0d7c88' : '#1a8a9c';
+    let b = `<path d="M6 0H262l6 6V200a6 6 0 0 1-6 6H6a6 6 0 0 1-6-6V6a6 6 0 0 1 6-6z" fill="${col}"/>`;
+    [[18, 14], [262, 30], [262, 176], [66, 194]].forEach(([x, y]) => { b += `<circle cx="${x}" cy="${y}" r="5.5" fill="#e9e4d4"/><circle cx="${x}" cy="${y}" r="3.4" fill="#2a2a2a"/>`; });
+    // USB-C, barrel jack, reset button
+    b += '<rect x="-7" y="30" width="30" height="24" rx="5" fill="#c9ced4" stroke="#8a9099"/><rect x="-3" y="37" width="20" height="10" rx="4" fill="#3a3f45"/>';
+    b += '<rect x="-10" y="132" width="52" height="40" rx="3" fill="#1f1f1f"/><circle cx="8" cy="152" r="9" fill="#3a3a3a"/><circle cx="8" cy="152" r="3" fill="#bbb"/>';
+    b += '<rect x="44" y="6" width="16" height="16" rx="2" fill="#c9ced4"/><circle cx="52" cy="14" r="5" fill="#d32f2f"/>';
+    // headers and pins
+    const strip = (x0, x1, y) => `<rect x="${x0 - 5.5}" y="${y - 5.5}" width="${x1 - x0 + 11}" height="11" rx="1" fill="#1b1b1b"/>`;
+    b += strip(87, 173, 9) + strip(189, 255.5, 9) + strip(131, 188.5, 191.5) + strip(208, 255.5, 191.5);
+    this.pins.forEach((q) => { b += `<rect x="${q.x - 3}" y="${q.y - 3}" width="6" height="6" fill="#0c0c0c"/><circle cx="${q.x}" cy="${q.y}" r="1.4" fill="#5c5a52"/>`; });
+    R4_TOP.forEach(([n, x, l]) => { b += `<text transform="translate(${x + 1.8} 18) rotate(90)" font-size="5.2" fill="#fff">${l || n}</text>`; });
+    R4_BOT.forEach(([n, x, l]) => { b += `<text transform="translate(${x + 1.8} 183) rotate(-90)" font-size="5.2" fill="#fff">${l || n}</text>`; });
+    b += t(171, 47, 7, 'DIGITAL (PWM ~)', '#fff', 'middle', 'bold') + t(160, 160, 6.5, 'POWER', '#fff', 'middle', 'bold') + t(232, 160, 6.5, 'ANALOG IN', '#fff', 'middle', 'bold');
+    // on-board LEDs: L (pin 13), TX, RX, ON
+    b += '<rect class="l13" x="118" y="52" width="7" height="4" rx="1" fill="#5a4a1a"/>' + t(130, 56, 5.5, 'L', '#fff', 'start');
+    b += '<rect x="96" y="52" width="7" height="4" rx="1" fill="#5a4a1a"/>' + t(99.5, 63, 5, 'TX', '#fff') + '<rect x="106" y="52" width="7" height="4" rx="1" fill="#5a4a1a"/>' + t(109.5, 63, 5, 'RX', '#fff');
+    b += '<rect class="lon" x="244" y="60" width="7" height="4" rx="1" fill="#1b4d2a"/>' + t(247.5, 72, 5.5, 'ON', '#fff');
+    // RA4M1 microcontroller
+    b += '<rect x="102" y="102" width="40" height="40" rx="2" fill="#1d1d1d"/>';
+    for (let i = 0; i < 8; i++) b += `<rect x="${105 + i * 4.6}" y="98.5" width="2" height="3.5" fill="#bbb"/><rect x="${105 + i * 4.6}" y="142" width="2" height="3.5" fill="#bbb"/><rect x="98.5" y="${105 + i * 4.6}" width="3.5" height="2" fill="#bbb"/><rect x="142" y="${105 + i * 4.6}" width="3.5" height="2" fill="#bbb"/>`;
+    b += t(122, 120, 5.5, 'RENESAS', '#aaa') + t(122, 128, 5, 'RA4M1', '#aaa');
+    if (wifi) {
+      // ESP32-S3 radio module and the 12×8 LED matrix
+      b += '<rect x="34" y="64" width="52" height="34" rx="2" fill="#c9ced4" stroke="#8a9099"/>' + t(60, 83, 6.5, 'ESP32-S3', '#444', 'middle', 'bold') + '<path d="M38 68h10v6h-6v6h10" stroke="#8a9099" fill="none"/>';
+      b += '<rect x="160" y="92" width="92" height="64" rx="3" fill="#0a5560"/>';
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 12; c++) b += `<rect class="mx" x="${165 + c * 7.2}" y="${96 + r * 7.2}" width="4.6" height="4.6" rx=".8" fill="#2c3b3d"/>`;
+    } else b += '<rect x="170" y="100" width="22" height="22" rx="2" fill="#1d1d1d"/><rect x="204" y="104" width="30" height="14" rx="1" fill="#e8e8e8"/>';
+    b += t(16, 112, 15, 'UNO', '#fff', 'start', 'bold') + t(16, 126, 9, wifi ? 'R4 WiFi' : 'R4 Minima', '#fff', 'start', 'bold');
+    return b;
+  }
+  CUSTOM['iotf-uno-r4-wifi'] = { w: 274, h: 206, scale: 1, pins: r4Pins(), svg() { return r4Svg.call(this, true); } };
+  CUSTOM['iotf-uno-r4-minima'] = { w: 274, h: 206, scale: 1, pins: r4Pins(), svg() { return r4Svg.call(this, false); } };
+
   class IotfPart extends HTMLElement {
     connectedCallback() {
       if (this._init) return;
@@ -565,6 +606,24 @@ window.IOTF = window.IOTF || {};
       blockPins: range(2, 13).map(String), blockAnalog: ['A0', 'A1', 'A2', 'A3', 'A6', 'A7'],
       level: 'advanced'
     },
+    unor4wifi: {
+      name: 'Arduino UNO R4 WiFi', tag: 'iotf-uno-r4-wifi', vref: 5, adcMax: 1023, wifi: true, wifiLib: 'WiFiS3.h', matrix: true, led: { pin: 13, prop: 'led13' },
+      gpio(n) { if (/^\d+$/.test(n)) return +n; const m = /^A(\d)$/.exec(n); if (m) return 14 + +m[1]; },
+      consts: { A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, DAC: 14, LED_BUILTIN: 13, SDA: 18, SCL: 19, SS: 10, MOSI: 11, MISO: 12, SCK: 13 },
+      digital: [2, 4, 7, 8, 12, 13, 3, 5, 6, 9, 10, 11], analog: [14, 15, 16, 17], pwmPreferred: [3, 5, 6, 9, 10, 11], inputOnly: [],
+      i2c: { sda: 18, scl: 19 }, spi: { ss: 10, sck: 13, miso: 12, mosi: 11 }, uart: { rx: 0, tx: 1 },
+      blockPins: range(2, 13).map(String), blockAnalog: ['A0', 'A1', 'A2', 'A3', 'A4', 'A5'],
+      level: 'basic'
+    },
+    unor4minima: {
+      name: 'Arduino UNO R4 Minima', tag: 'iotf-uno-r4-minima', vref: 5, adcMax: 1023, wifi: false, led: { pin: 13, prop: 'led13' },
+      gpio(n) { if (/^\d+$/.test(n)) return +n; const m = /^A(\d)$/.exec(n); if (m) return 14 + +m[1]; },
+      consts: { A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, DAC: 14, LED_BUILTIN: 13, SDA: 18, SCL: 19, SS: 10, MOSI: 11, MISO: 12, SCK: 13 },
+      digital: [2, 4, 7, 8, 12, 13, 3, 5, 6, 9, 10, 11], analog: [14, 15, 16, 17], pwmPreferred: [3, 5, 6, 9, 10, 11], inputOnly: [],
+      i2c: { sda: 18, scl: 19 }, spi: { ss: 10, sck: 13, miso: 12, mosi: 11 }, uart: { rx: 0, tx: 1 },
+      blockPins: range(2, 13).map(String), blockAnalog: ['A0', 'A1', 'A2', 'A3', 'A4', 'A5'],
+      level: 'advanced'
+    },
     franzininho: {
       name: 'Franzininho (ATtiny85)', tag: 'franzininho', vref: 5, adcMax: 1023, wifi: false, led: { pin: 1, prop: 'led1' },
       gpio(n) { const m = /^PB(\d)$/.exec(n); if (m) return +m[1]; },
@@ -587,7 +646,7 @@ window.IOTF = window.IOTF || {};
   const def = (key, o) => { P[key] = Object.assign({ key, tag: o.tag || 'wokwi-' + key, level: 'advanced', sig: [], tie: {}, sim: {}, attrs: {} }, o); };
 
   // boards
-  Object.entries(BOARDS).forEach(([id, b]) => def(b.tag, { name: b.name, cat: 'บอร์ด', kind: 'board', board: id, level: b.level }));
+  Object.entries(BOARDS).forEach(([id, b]) => def(b.tag, { name: b.name, cat: 'บอร์ด', kind: 'board', board: id, level: b.level, tag: b.tag.startsWith('iotf-') ? b.tag : 'wokwi-' + b.tag }));
 
   // lights & sound
   def('led', { name: 'LED', cat: 'ไฟและเสียง', kind: 'led', level: 'basic', sig: [['A', 'pwm']], tie: { C: 'GND' }, attrs: { color: 'red' }, opts: { color: ['red', 'green', 'blue', 'yellow', 'orange', 'white', 'purple'] } });
@@ -714,6 +773,7 @@ window.IOTF = window.IOTF || {};
     'iotf-a4988': ['A4988 stepper driver', 'step dir nema'], 'stepper-motor': ['Stepper motor NEMA 17', 'step motor สเต็ปเปอร์'], 'biaxial-stepper': ['Biaxial stepper motor', 'step'],
     'iotf-relay4': ['Relay module 4 channel', 'switch รีเลย์'], 'ks2e-m-dc5': ['Relay KS2E', 'switch รีเลย์'], resistor: ['Resistor', 'ohm โอห์ม'], hx711: ['HX711 load cell amplifier', 'weight scale'],
     'iotf-rc522': ['RFID RC522 card reader', 'nfc บัตร'], 'iotf-neo6m': ['GPS NEO-6M', 'location พิกัด'], 'iotf-sx1278': ['LoRa SX1278 Ra-02', 'radio wireless ไร้สาย'], ds1307: ['RTC DS1307 real time clock', 'นาฬิกา เวลา'],
+    'iotf-uno-r4-wifi': ['Arduino UNO R4 WiFi board', 'renesas ra4m1 esp32-s3 led matrix wifis3'], 'iotf-uno-r4-minima': ['Arduino UNO R4 Minima board', 'renesas ra4m1'],
     'microsd-card': ['microSD card module', 'storage file เก็บไฟล์'], 'ir-receiver': ['IR receiver', 'infrared remote รีโมต']
   };
   Object.entries(EN).forEach(([k, [en, kw]]) => { if (P[k]) { P[k].en = en; P[k].kw = kw; } });

@@ -95,6 +95,8 @@
   def('iotf_notone', function () { this.appendDummyInput().appendField('หยุดเสียง Buzzer ขา').appendField(pinField(), 'PIN'); stmt(this, COL.out); });
   def('iotf_rgb', function () { this.appendDummyInput().appendField('RGB LED ขา R').appendField(pinField(), 'R').appendField('G').appendField(pinField(), 'G').appendField('B').appendField(pinField(), 'B').appendField('สี').appendField(new BL.FieldDropdown(COLOURS), 'C'); stmt(this, COL.out); });
   def('iotf_relay', function () { this.appendDummyInput().appendField('สั่ง Relay ขา').appendField(pinField(), 'PIN').appendField(new BL.FieldDropdown([['เปิด', 'ON'], ['ปิด', 'OFF']]), 'STATE'); stmt(this, COL.out, 'โมดูล relay ส่วนใหญ่ทำงานเมื่อได้ LOW'); });
+  def('iotf_matrix_text', function () { this.appendValueInput('TEXT').appendField('LED Matrix (UNO R4 WiFi) เลื่อนข้อความ'); this.setInputsInline(true); stmt(this, COL.out, 'ข้อความวิ่งบนจอ LED 12×8 ของบอร์ด UNO R4 WiFi (ภาษาอังกฤษ ตัวเลข และสัญลักษณ์)'); });
+  def('iotf_matrix_icon', function () { this.appendDummyInput().appendField('LED Matrix (UNO R4 WiFi) แสดงรูป').appendField(new BL.FieldDropdown([['❤ หัวใจ', 'HEART'], ['☺ ยิ้ม', 'SMILE'], ['☹ เศร้า', 'SAD'], ['✓ ถูก', 'CHECK'], ['✗ ผิด', 'CROSS'], ['↑ ลูกศรขึ้น', 'UP'], ['↓ ลูกศรลง', 'DOWN'], ['WiFi', 'WIFI'], ['ว่าง (ดับ)', 'CLEAR']]), 'ICON'); stmt(this, COL.out); });
   def('iotf_lcd_print', function () { this.appendValueInput('TEXT').appendField('LCD แสดง'); this.appendDummyInput().appendField('แถว').appendField(new BL.FieldNumber(0, 0, 3, 1), 'ROW').appendField('คอลัมน์').appendField(new BL.FieldNumber(0, 0, 19, 1), 'COL'); this.setInputsInline(true); stmt(this, COL.out); });
   def('iotf_lcd_clear', function () { this.appendDummyInput().appendField('ล้างจอ LCD'); stmt(this, COL.out); });
   def('iotf_oled_print', function () { this.appendValueInput('TEXT').appendField('OLED แสดง'); this.appendDummyInput().appendField('x').appendField(new BL.FieldNumber(0, 0, 127, 1), 'X').appendField('y').appendField(new BL.FieldNumber(0, 0, 63, 1), 'Y').appendField('ขนาด').appendField(new BL.FieldNumber(1, 1, 4, 1), 'S'); this.setInputsInline(true); stmt(this, COL.out); });
@@ -161,7 +163,7 @@
   G.finish = function () {
     IOTF.blocks.lastCloud = this.cloud; // cloud variables these blocks use (created in the Cloud tab when the program runs)
     const out = ['// สร้างจาก Block ด้วย WJSIM — แก้เองได้ในแท็บนี้'];
-    if (this.cloud) { this.inc.delete('WiFi.h'); this.inc.delete('WiFiNINA.h'); out.push('#include "thingProperties.h" // ตัวแปรคลาวด์ (ดูในแท็บ คลาวด์)'); }
+    if (this.cloud) { this.inc.delete('WiFi.h'); this.inc.delete('WiFiNINA.h'); this.inc.delete('WiFiS3.h'); out.push('#include "thingProperties.h" // ตัวแปรคลาวด์ (ดูในแท็บ คลาวด์)'); }
     if (this.inc.size) { out.push(...[...this.inc].map((i) => `#include <${i}>`)); out.push(''); }
     const cloudVars = this.cloud ? new Set([...this.cloud.keys()].concat(IOTF.iotcloud ? IOTF.iotcloud.vars().map((x) => x.name) : [])) : new Set();
     if (this.vars.size) { this.vars.forEach((v) => cloudVars.has(v.c) || out.push(v.str ? `String ${v.c} = "";${v.label !== v.c ? ' // ' + v.label : ''}` : `float ${v.c} = 0;${v.label !== v.c ? ' // ' + v.label : ''}`)); out.push(''); }
@@ -212,6 +214,7 @@
   const pm = (pin, mode) => { if (!G.setups.has('pm' + pin)) G.setups.set('pm' + pin, `pinMode(${pin}, ${mode});`); };
   const adcMax = () => board().adcMax, vref = () => board().vref;
   const isEsp = () => board() === IOTF.BOARDS.esp32;
+  const wifiInc = () => (isEsp() ? 'WiFi.h' : board().wifiLib || 'WiFiNINA.h');
 
   F.iotf_main = (b) => { G.setupCode = G.statementToCode(b, 'SETUP'); G.loopCode = G.statementToCode(b, 'LOOP'); return ''; };
   F.iotf_digital_write = (b) => { const p = b.getFieldValue('PIN'); pm(p, 'OUTPUT'); return `digitalWrite(${p}, ${b.getFieldValue('STATE')});\n`; };
@@ -353,6 +356,27 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
   };
   F.iotf_relay = (b) => { const p = b.getFieldValue('PIN'); pm(p, 'OUTPUT'); G.setups.set('rl' + p, `digitalWrite(${p}, HIGH); // relay ปิดไว้ก่อน (ทำงานเมื่อ LOW)`); return `digitalWrite(${p}, ${b.getFieldValue('STATE') === 'ON' ? 'LOW' : 'HIGH'});\n`; };
   const lcd = () => { G.inc.add('Wire.h'); G.inc.add('LiquidCrystal_I2C.h'); G.glob.set('lcd', 'LiquidCrystal_I2C lcd(0x27, 16, 2);'); G.setups.set('lcd', 'lcd.init();\n  lcd.backlight();'); };
+  const MATRIX_ICONS = { // 8 rows of 12 pixels
+    HEART: ['000000000000', '001100110000', '011111111000', '011111111000', '001111110000', '000111100000', '000011000000', '000000000000'],
+    SMILE: ['000000000000', '000110110000', '000110110000', '000000000000', '001000001000', '000100010000', '000011100000', '000000000000'],
+    SAD: ['000000000000', '000110110000', '000110110000', '000000000000', '000011100000', '000100010000', '001000001000', '000000000000'],
+    CHECK: ['000000000000', '000000000100', '000000001000', '000000010000', '010000100000', '001001000000', '000110000000', '000000000000'],
+    CROSS: ['000000000000', '001000001000', '000100010000', '000010100000', '000001000000', '000010100000', '000100010000', '001000001000'],
+    UP: ['000001000000', '000011100000', '000110110000', '001101011000', '000001000000', '000001000000', '000001000000', '000001000000'],
+    DOWN: ['000001000000', '000001000000', '000001000000', '000001000000', '001101011000', '000110110000', '000011100000', '000001000000'],
+    WIFI: ['000000000000', '000111110000', '001000001000', '010011100100', '000100010000', '000001000000', '000001000000', '000000000000'],
+    CLEAR: Array(8).fill('000000000000')
+  };
+  const useMatrix = () => { G.inc.add('Arduino_LED_Matrix.h'); G.glob.set('matrix', 'ArduinoLEDMatrix matrix;'); G.setups.set('matrix', 'matrix.begin();'); };
+  F.iotf_matrix_text = (b) => {
+    useMatrix(); G.inc.add('ArduinoGraphics.h');
+    return `matrix.beginDraw();\nmatrix.stroke(0xFFFFFFFF);\nmatrix.textScrollSpeed(80);\nmatrix.textFont(Font_5x7);\nmatrix.beginText(0, 1, 0xFFFFFF);\nmatrix.println(${v(b, 'TEXT', O.NONE, '""')});\nmatrix.endText(SCROLL_LEFT);\nmatrix.endDraw();\n`;
+  };
+  F.iotf_matrix_icon = (b) => {
+    useMatrix(); const k = b.getFieldValue('ICON'), rows = MATRIX_ICONS[k] || MATRIX_ICONS.CLEAR;
+    G.glob.set('icon' + k, `uint8_t icon${k}[8][12] = {\n${rows.map((r) => '  { ' + r.split('').join(', ') + ' }').join(',\n')}\n};`);
+    return `matrix.renderBitmap(icon${k}, 8, 12);\n`;
+  };
   F.iotf_lcd_print = (b) => { lcd(); return `lcd.setCursor(${b.getFieldValue('COL')}, ${b.getFieldValue('ROW')});\nlcd.print(${v(b, 'TEXT', O.NONE, '""')});\n`; };
   F.iotf_lcd_clear = () => { lcd(); return 'lcd.clear();\n'; };
   const oled = () => { G.inc.add('Wire.h'); G.inc.add('Adafruit_GFX.h'); G.inc.add('Adafruit_SSD1306.h'); G.glob.set('oled', 'Adafruit_SSD1306 display(128, 64, &Wire, -1);'); G.setups.set('oled', 'display.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n  display.clearDisplay();\n  display.setTextColor(SSD1306_WHITE);\n  display.display();'); };
@@ -362,10 +386,10 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
   F.iotf_neopixel = (b) => { const s = strip(b); return `${s}.setPixelColor(${v(b, 'I', O.NONE, '0')}, ${s}.Color(${b.getFieldValue('C')}));\n${s}.show();\n`; };
   F.iotf_neopixel_fill = (b) => { const s = strip(b); return `${s}.fill(${s}.Color(${b.getFieldValue('C')}));\n${s}.show();\n`; };
   F.iotf_wifi = (b) => {
-    serial(); G.inc.add(isEsp() ? 'WiFi.h' : 'WiFiNINA.h');
+    serial(); G.inc.add(wifiInc());
     return `WiFi.begin(${JSON.stringify(b.getFieldValue('SSID'))}, ${JSON.stringify(b.getFieldValue('PASS'))});\nSerial.print("Connecting WiFi");\nwhile (WiFi.status() != WL_CONNECTED) {\n  delay(500);\n  Serial.print(".");\n}\nSerial.println(" connected!");\n`;
   };
-  const useMqtt = () => { serial(); G.inc.add(isEsp() ? 'WiFi.h' : 'WiFiNINA.h'); G.inc.add('PubSubClient.h'); G.mqtt = true; };
+  const useMqtt = () => { serial(); G.inc.add(wifiInc()); G.inc.add('PubSubClient.h'); G.mqtt = true; };
   F.iotf_mqtt_publish = (b) => { useMqtt(); return `mqtt.publish(${JSON.stringify(b.getFieldValue('TOPIC'))}, String(${v(b, 'VALUE', O.NONE, '0')}).c_str());\n`; };
   const useNow = () => { serial(); G.inc.add('WiFi.h'); G.inc.add('esp_now.h'); if (!G.now) G.now = new Set(); };
   F.iotf_now_send = (b) => {
@@ -442,7 +466,7 @@ void wjMotor(int in1, int in2, int en, int dir, int speed) {
         { kind: 'category', name: 'เวลา', colour: COL.time, contents: [B('iotf_delay', { inputs: { MS: num(1000) } }), B('iotf_millis'), B('iotf_map', { inputs: { V: { shadow: { type: 'iotf_analog_read' } } } })] },
         { kind: 'category', name: 'Serial', colour: COL.serial, contents: [B('iotf_serial_print', { inputs: { VALUE: txt('สวัสดี') } })] },
         { kind: 'category', name: 'เซ็นเซอร์', colour: COL.sensor, contents: sensors },
-        { kind: 'category', name: 'เอาต์พุต', colour: COL.out, contents: [B('iotf_motor', { inputs: { SPEED: num(80) } }), B('iotf_stepper28', { inputs: { DEG: num(90), RPM: num(10) } }), B('iotf_servo', { inputs: { ANGLE: num(90) } }), B('iotf_tone', { inputs: { FREQ: num(1000), MS: num(200) } }), B('iotf_notone'), B('iotf_rgb'), B('iotf_relay'), B('iotf_lcd_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_lcd_clear'), B('iotf_oled_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_oled_clear'), B('iotf_neopixel', { inputs: { I: num(0) } }), B('iotf_neopixel_fill')] },
+        { kind: 'category', name: 'เอาต์พุต', colour: COL.out, contents: [B('iotf_matrix_text', { inputs: { TEXT: { shadow: { type: 'text', fields: { TEXT: 'HELLO' } } } } }), B('iotf_matrix_icon'), B('iotf_motor', { inputs: { SPEED: num(80) } }), B('iotf_stepper28', { inputs: { DEG: num(90), RPM: num(10) } }), B('iotf_servo', { inputs: { ANGLE: num(90) } }), B('iotf_tone', { inputs: { FREQ: num(1000), MS: num(200) } }), B('iotf_notone'), B('iotf_rgb'), B('iotf_relay'), B('iotf_lcd_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_lcd_clear'), B('iotf_oled_print', { inputs: { TEXT: txt('Hello') } }), B('iotf_oled_clear'), B('iotf_neopixel', { inputs: { I: num(0) } }), B('iotf_neopixel_fill')] },
         { kind: 'category', name: 'บอร์ดคุยกัน', colour: COL.now, contents: [B('iotf_now_send', { inputs: { VALUE: num(1) } }), B('controls_if', { inputs: { IF0: { block: { type: 'iotf_now_new' } } } }), B('iotf_now_new'), B('iotf_now_text'), B('iotf_now_number')] },
         { kind: 'category', name: 'คลาวด์', colour: COL.cloud, contents: [B('iotf_cloud_set', { inputs: { VALUE: num(25) } }), B('iotf_cloud_get'), B('controls_if', { inputs: { IF0: { block: { type: 'iotf_cloud_changed' } } } }), B('iotf_cloud_changed'), B('iotf_cloud_connected')] },
         { kind: 'category', name: 'IoT', colour: COL.iot, contents: [B('iotf_wifi'), B('iotf_mqtt_publish', { inputs: { VALUE: num(25) } }), B('iotf_mqtt_value'), B('iotf_mqtt_number')] },

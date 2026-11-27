@@ -7,17 +7,18 @@
 
 | | **Basic** | **Advanced** |
 |---|---|---|
-| อุปกรณ์ | 61 ชิ้นที่ต่อง่าย | ทั้งหมด 89 ชิ้น + บอร์ด 6 รุ่น |
+| อุปกรณ์ | 62 ชิ้นที่ต่อง่าย | ทั้งหมด 91 ชิ้น + บอร์ด 8 รุ่น |
 | การต่อสาย | ต่อสายสัญญาณเอง ไฟเลี้ยง/กราวด์ต่อให้ในตัว | ต่อเองทุกเส้น ต้องต่อไฟเลี้ยง กราวด์ ตัวต้านทาน |
 | เขียนโปรแกรม | Block ภาษาไทย (สร้างโค้ด C++ ให้ดูข้าง ๆ) | C++ แบบ Arduino |
 | ตรวจวงจร | เตือนเฉพาะขาที่ยังไม่ได้ต่อ | เตือนไฟลัดวงจร ไม่ได้ต่อไฟเลี้ยง LED ไม่มีตัวต้านทาน ใช้ขาอินพุตอย่างเดียวผิด ฯลฯ |
 
 ## ฟีเจอร์
 
-- **อุปกรณ์ 89 ชิ้น**: บอร์ด (ESP32, Uno, Nano, Mega, Nano RP2040 Connect, ATtiny85), Breadboard (ครึ่งแผ่น 400 รู, เต็มแผ่น 830 รู, มินิ 170 รู วางขาอุปกรณ์ลงรูได้เลย), เซ็นเซอร์ (DHT22, DHT11, DS18B20, BME280, BMP280, BH1750, HC-SR04, PIR, LDR, MQ-2, MQ-135, เปลวไฟ, เสียง, NTC, ชีพจร, MAX30102, Tilt, MPU6050, ความชื้นในดิน, น้ำฝน, ระดับน้ำ, ลูกลอย (Float switch), ความขุ่นของน้ำ (Turbidity), IR หลบสิ่งกีดขวาง, TCRT5000, Touch TTP223, Reed switch, SW-420, PMS5003 PM2.5, ACS712, PZEM-004T, YF-S201, pH, TDS, ความเค็ม (Salinity), Load Cell) ค้นหาอุปกรณ์ได้ทั้งชื่อไทยและอังกฤษ, จอ (LCD 16×2/20×4, OLED, TFT, 7-segment), ไฟ/เสียง (LED, RGB, NeoPixel วงแหวน/เมทริกซ์, Bar graph, Buzzer), อินพุต (ปุ่ม, สวิตช์, Potentiometer, Joystick, Keypad, Encoder, DIP, รีโมท IR, Dialer), มอเตอร์ (Servo, Stepper, มอเตอร์ DC แบบ TT, ปั๊มน้ำ, มอเตอร์สั่น, ไดรเวอร์ L298N / L9110S, สเต็ปเปอร์ 28BYJ-48 + ULN2003, ไดรเวอร์ A4988), โมดูล (Relay 1/4 ช่อง, HX711, RFID RC522, GPS NEO-6M, LoRa SX1278, RTC, microSD, IR Receiver)
+- **อุปกรณ์ 91 ชิ้น**: บอร์ด (ESP32, Uno, UNO R4 WiFi, UNO R4 Minima, Nano, Mega, Nano RP2040 Connect, ATtiny85), Breadboard (ครึ่งแผ่น 400 รู, เต็มแผ่น 830 รู, มินิ 170 รู วางขาอุปกรณ์ลงรูได้เลย), เซ็นเซอร์ (DHT22, DHT11, DS18B20, BME280, BMP280, BH1750, HC-SR04, PIR, LDR, MQ-2, MQ-135, เปลวไฟ, เสียง, NTC, ชีพจร, MAX30102, Tilt, MPU6050, ความชื้นในดิน, น้ำฝน, ระดับน้ำ, ลูกลอย (Float switch), ความขุ่นของน้ำ (Turbidity), IR หลบสิ่งกีดขวาง, TCRT5000, Touch TTP223, Reed switch, SW-420, PMS5003 PM2.5, ACS712, PZEM-004T, YF-S201, pH, TDS, ความเค็ม (Salinity), Load Cell) ค้นหาอุปกรณ์ได้ทั้งชื่อไทยและอังกฤษ, จอ (LCD 16×2/20×4, OLED, TFT, 7-segment), ไฟ/เสียง (LED, RGB, NeoPixel วงแหวน/เมทริกซ์, Bar graph, Buzzer), อินพุต (ปุ่ม, สวิตช์, Potentiometer, Joystick, Keypad, Encoder, DIP, รีโมท IR, Dialer), มอเตอร์ (Servo, Stepper, มอเตอร์ DC แบบ TT, ปั๊มน้ำ, มอเตอร์สั่น, ไดรเวอร์ L298N / L9110S, สเต็ปเปอร์ 28BYJ-48 + ULN2003, ไดรเวอร์ A4988), โมดูล (Relay 1/4 ช่อง, HX711, RFID RC522, GPS NEO-6M, LoRa SX1278, RTC, microSD, IR Receiver)
 - **IoT ครบในแอป**: WiFi จำลอง, MQTT broker ในตัว, Dashboard (เกจ กราฟ สวิตช์ ปุ่ม แถบเลื่อน ไฟสถานะ ช่องส่งข้อความ), LoRa และ **หลายหน้าต่างคุยกันได้** (ไฟล์ → หน้าต่างใหม่) เพื่อจำลองหลายบอร์ด
 - **หลายบอร์ดในวงจรเดียว**: ลากบอร์ดเพิ่มลงผัง แต่ละบอร์ดมีโค้ดของตัวเอง (MAC 24:0A:C4:00:00:0N, IP 192.168.1.10N) ส่งข้อมูลหากันผ่าน ESP-NOW (มีบล็อก "บอร์ดคุยกัน"), WiFiUDP, WebServer/HTTPClient, MQTT และ LoRa พร้อมแอนิเมชันแพ็กเก็ตบนผัง
 - **IoT Cloud (แบบ Arduino Cloud)**: แท็บ ☁ คลาวด์ สร้างตัวแปรคลาวด์ (bool/int/float/String, READ หรือ READ/WRITE, ON_CHANGE หรือทุก N วินาที) แล้วใช้ในโค้ดผ่าน `#include "thingProperties.h"`, `initProperties()`, `ArduinoCloud.begin()`, `ArduinoCloud.update()` และ `onXxxChange()` เหมือน Arduino Cloud มี Dashboard คลาวด์ (สวิตช์ ปุ่มกด แถบเลื่อน เกจ กราฟ ไฟสถานะ ช่องข้อความ) บอร์ดหลายตัวใช้ตัวแปรเดียวกันเพื่อส่งข้อมูลหากันได้ ในโหมด Basic มีบล็อกหมวด คลาวด์ คลาวด์นี้จำลองอยู่ในแอป ไม่ได้ต่อกับ Arduino Cloud จริง
+- **Arduino UNO R4 WiFi / R4 Minima**: วางบอร์ด R4 ได้ทั้งสองรุ่น (ขาตรงกับ UNO เดิม) R4 WiFi ต่อ WiFi/MQTT/IoT Cloud ได้ (`WiFiS3.h`) และมีจอ LED Matrix 12×8 บนบอร์ดที่ใช้ได้จริง (`Arduino_LED_Matrix`: `loadFrame`, `renderBitmap`, `loadSequence`/`play` และข้อความวิ่งแบบ ArduinoGraphics) ในโหมด Basic มีบล็อกข้อความวิ่งและรูปไอคอน `analogReadResolution(14)` ได้ค่า 0–16383 เหมือนบอร์ดจริง
 - **ไลบรารีที่รองรับในโค้ด C++**: WiFi, PubSubClient, DHT, Servo/ESP32Servo, LiquidCrystal_I2C, Adafruit SSD1306 / ILI9341 / NeoPixel / MPU6050, HX711, MFRC522, TinyGPSPlus, LoRa, RTClib, SD, Keypad, Stepper, AccelStepper, IRremote, attachInterrupt, tone, ledc (ESP32), Serial รับ-ส่ง
 - **โปรเจกต์ของฉัน**: หน้ารวมโปรเจกต์ที่บันทึกไว้ในเครื่อง มีภาพย่อวงจร ค้นหา เปลี่ยนชื่อ ทำสำเนา ลบ และส่งออกไฟล์ `.iotf` กดปุ่ม "บันทึก" (Ctrl+S) เพื่อเก็บโปรเจกต์ลงหน้านี้
 - Serial Monitor (พิมพ์ส่งเข้าได้), แท็บ LoRa, ไฟล์ใน SD card, ตัวอย่าง 17 โปรเจกต์, Undo/Redo, บันทึกเป็นไฟล์ `.iotf`, ส่งออกโค้ด `.ino` ไปใช้กับ Arduino IDE, บันทึกอัตโนมัติ
@@ -65,7 +66,7 @@ git push origin v1.0.0
 electron/main.js      หน้าต่าง เมนู เปิด/บันทึกไฟล์ และส่งข้อความระหว่างหน้าต่าง
 electron/preload.js   สะพานเชื่อมระหว่างหน้าแอปกับระบบ (หน้าแอปเข้าถึง Node ไม่ได้)
 src/index.html        หน้าจอหลัก
-src/js/parts.js       รายการอุปกรณ์ บอร์ด และภาพที่วาดเอง 39 ชิ้น
+src/js/parts.js       รายการอุปกรณ์ บอร์ด และภาพที่วาดเอง 41 ชิ้น
 src/js/editor.js      พื้นที่ต่อวงจร สายไฟ การตรวจวงจร แผงคุณสมบัติ
 src/js/transpile.js   แปลง C++ แบบ Arduino ให้รันในตัวจำลอง
 src/js/runtime.js     ตัวจำลอง: คำสั่ง Arduino และไลบรารีทั้งหมด
@@ -89,7 +90,7 @@ src/vendor/           ไลบรารีภายนอก (สร้าง�
 
 ## เครดิต
 
-ดู `CREDITS.md` — ภาพอุปกรณ์ 50 ชิ้นจาก wokwi-elements (MIT), 39 ชิ้นวาดขึ้นใหม่ (MIT), Blockly (Apache 2.0), CodeMirror (MIT), Electron (MIT)
+ดู `CREDITS.md` — ภาพอุปกรณ์ 50 ชิ้นจาก wokwi-elements (MIT), 41 ชิ้นวาดขึ้นใหม่ (MIT), Blockly (Apache 2.0), CodeMirror (MIT), Electron (MIT)
 
 ## สัญญาอนุญาต
 

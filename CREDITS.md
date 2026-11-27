@@ -33,10 +33,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### Original drawings (39 parts)
+### Original drawings (41 parts)
 pH Sensor, TDS Sensor, Load Cell, RFID RC522, GPS NEO-6M, LoRa SX1278, 4-channel Relay Module,
 DHT11, DS18B20, soil moisture, rain, water level, MQ-135, IR obstacle, TCRT5000, TTP223 touch, reed switch,
-SW-420, BME280, BMP280, BH1750, PMS5003, ACS712, PZEM-004T, YF-S201, MAX30102, salinity sensor, turbidity sensor, float switch,
+SW-420, BME280, BMP280, BH1750, PMS5003, ACS712, PZEM-004T, YF-S201, MAX30102, salinity sensor, turbidity sensor, float switch, Arduino UNO R4 WiFi and UNO R4 Minima boards,
 TT gear motor, water pump, vibration motor, L298N, L9110S, 28BYJ-48 with ULN2003, A4988
 and breadboards (half, full, mini)
 were drawn from scratch for WJSIM (`src/js/parts.js`). Copyright (c) 2026 WJSIM Contributors, MIT License.
@@ -56,3 +56,9 @@ The Electron runtime ships its own license files (`LICENSE.electron.txt`, `LICEN
 ## Trademarks
 Product and brand names (Arduino, ESP32, Raspberry Pi, Wokwi, ...) belong to their respective owners.
 WJSIM is not affiliated with or endorsed by them. Artwork is used only to show the style of each device.
+
+## Trademarks
+
+Arduino, UNO and the Arduino logo are trademarks of Arduino SA. ESP32 is a trademark of Espressif Systems.
+WJSIM is an independent project and is not affiliated with or endorsed by these companies; board names are used
+only to say which hardware is simulated.

@@ -261,7 +261,36 @@
     if (p.type === 'iotf-waterlevel') { const h = (s.level / 100 * 62).toFixed(1); set('.water', 'y', (70 - h).toFixed(1)); set('.water', 'height', h); }
     if (p.type === 'iotf-turbidity') set('.murk', 'opacity', (s.ntu / 3000 * 0.9).toFixed(2));
     if (p.type === 'iotf-float') set('.floatpos', 'transform', `translate(0 ${s.detect ? -52 : 0})`);
+    if (d.kind === 'board') {
+      set('.lon', 'fill', on ? '#3cff6e' : '#1b4d2a'); set('.l13', 'fill', e.led13 ? '#ffb020' : '#5a4a1a');
+      const dv = sim.devByBoard[p.id];
+      if (e.svg && dv && dv.matrixDirty) { dv.matrixDirty = false; if (!e._mx) e._mx = [...e.svg.querySelectorAll('.mx')]; e._mx.forEach((r, i) => r.setAttribute('fill', dv.matrix[i] ? '#ff3b2f' : '#2c3b3d')); }
+    }
     if (p.type === 'iotf-sw420') set('.shake', 'x', on && s.detect ? 20 + Math.round(Math.sin(performance.now() / 25) * 3) : 20);
+  }
+
+  // 5×7 font for the UNO R4 matrix; each glyph is 7 rows of 5 bits (bit 4 = left)
+  const FONT57 = {
+    ' ': [0, 0, 0, 0, 0, 0, 0], 0: [14, 17, 19, 21, 25, 17, 14], 1: [4, 12, 4, 4, 4, 4, 14], 2: [14, 17, 1, 2, 4, 8, 31], 3: [31, 2, 4, 2, 1, 17, 14], 4: [2, 6, 10, 18, 31, 2, 2],
+    5: [31, 16, 30, 1, 1, 17, 14], 6: [6, 8, 16, 30, 17, 17, 14], 7: [31, 1, 2, 4, 8, 8, 8], 8: [14, 17, 17, 14, 17, 17, 14], 9: [14, 17, 17, 15, 1, 2, 12],
+    A: [14, 17, 17, 31, 17, 17, 17], B: [30, 17, 17, 30, 17, 17, 30], C: [14, 17, 16, 16, 16, 17, 14], D: [28, 18, 17, 17, 17, 18, 28], E: [31, 16, 16, 30, 16, 16, 31],
+    F: [31, 16, 16, 30, 16, 16, 16], G: [14, 17, 16, 23, 17, 17, 15], H: [17, 17, 17, 31, 17, 17, 17], I: [14, 4, 4, 4, 4, 4, 14], J: [7, 2, 2, 2, 2, 18, 12],
+    K: [17, 18, 20, 24, 20, 18, 17], L: [16, 16, 16, 16, 16, 16, 31], M: [17, 27, 21, 21, 17, 17, 17], N: [17, 17, 25, 21, 19, 17, 17], O: [14, 17, 17, 17, 17, 17, 14],
+    P: [30, 17, 17, 30, 16, 16, 16], Q: [14, 17, 17, 17, 21, 18, 13], R: [30, 17, 17, 30, 20, 18, 17], S: [15, 16, 16, 14, 1, 1, 30], T: [31, 4, 4, 4, 4, 4, 4],
+    U: [17, 17, 17, 17, 17, 17, 14], V: [17, 17, 17, 17, 17, 10, 4], W: [17, 17, 17, 21, 21, 21, 10], X: [17, 17, 10, 4, 10, 17, 17], Y: [17, 17, 17, 10, 4, 4, 4], Z: [31, 1, 2, 4, 8, 16, 31],
+    '.': [0, 0, 0, 0, 0, 12, 12], ',': [0, 0, 0, 0, 12, 4, 8], ':': [0, 12, 12, 0, 12, 12, 0], '-': [0, 0, 0, 31, 0, 0, 0], '+': [0, 4, 4, 31, 4, 4, 0], '=': [0, 0, 31, 0, 31, 0, 0],
+    '!': [4, 4, 4, 4, 4, 0, 4], '?': [14, 17, 1, 2, 4, 0, 4], '%': [24, 25, 2, 4, 8, 19, 3], '/': [0, 1, 2, 4, 8, 16, 0], '*': [0, 4, 21, 14, 21, 4, 0], '#': [10, 10, 31, 10, 31, 10, 10],
+    '(': [2, 4, 8, 8, 8, 4, 2], ')': [8, 4, 2, 2, 2, 4, 8], '°': [12, 18, 18, 12, 0, 0, 0], "'": [4, 4, 8, 0, 0, 0, 0], '<': [2, 4, 8, 16, 8, 4, 2], '>': [8, 4, 2, 1, 2, 4, 8]
+  };
+  // text → columns of 7 bits (bit 0 = top row), one blank column between letters
+  function matrixText(s) {
+    const cols = [];
+    [...String(s)].forEach((ch) => {
+      const g = FONT57[ch] || FONT57[ch.toUpperCase()] || FONT57['?'];
+      for (let c = 0; c < 5; c++) { let v = 0; for (let r = 0; r < 7; r++) if (g[r] >> (4 - c) & 1) v |= 1 << r; cols.push(v); }
+      cols.push(0);
+    });
+    return cols;
   }
 
   /* ---------- outputs → parts ---------- */
@@ -457,10 +486,10 @@
     env.analogRead = (pin) => {
       const g = analogGpio(pin), n = gpioNet(g);
       if (n == null) return 0;
-      return Math.round(clamp(netVoltage(n) / B.vref, 0, 1) * B.adcMax);
+      return Math.round(clamp(netVoltage(n) / B.vref, 0, 1) * (dev.adcMax || B.adcMax));
     };
-    env.analogReadMilliVolts = (pin) => Math.round(env.analogRead(pin) / B.adcMax * B.vref * 1000);
-    env.analogReadResolution = () => { };
+    env.analogReadMilliVolts = (pin) => Math.round(env.analogRead(pin) / (dev.adcMax || B.adcMax) * B.vref * 1000);
+    env.analogReadResolution = (bits) => { bits = Math.round(Number(bits)); if (bits >= 8 && bits <= 16) dev.adcMax = 2 ** bits - 1; }; // e.g. 14 on the UNO R4
     env.analogWrite = (pin, val) => {
       const g = toGpio(pin), o = dev.out[g] || (dev.out[g] = { mode: 1, v: 0 });
       o.mode = 1; o.v = clamp(val / 255, 0, 1);
@@ -579,7 +608,7 @@
     env.WiFi = {
       mode() { return true; }, setHostname() { return true; }, persistent() { }, setAutoReconnect() { },
       begin(ssid, pass) {
-        if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว เลือกบอร์ด ESP32 หรือ Nano RP2040 Connect`); wifi.status = 1; return 1; }
+        if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว เลือกบอร์ด ESP32, UNO R4 WiFi หรือ Nano RP2040 Connect`); wifi.status = 1; return 1; }
         Object.assign(wifi, { status: 6, ssid: String(ssid || ''), ip: '0.0.0.0' });
         IOTF.iot.setWifi('กำลังเชื่อมต่อ ' + wifi.ssid + '…', false, dev.name);
         sim.timers.push(setTimeout(() => { if (!sim.running) return; wifi.status = 3; wifi.ip = ni.ip; IOTF.iot.setWifi(`${wifi.ssid} · IP ${wifi.ip}`, true, dev.name); }, 1200));
@@ -646,7 +675,7 @@
     }
     env.ArduinoCloud = {
       begin(conn) {
-        if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว ใช้ ArduinoCloud ไม่ได้ เลือกบอร์ด ESP32 หรือ Nano RP2040 Connect`); return 0; }
+        if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว ใช้ ArduinoCloud ไม่ได้ เลือกบอร์ด ESP32, UNO R4 WiFi หรือ Nano RP2040 Connect`); return 0; }
         if (cloud.began) return 1;
         cloud.began = true; cloud.state = 1; IC.setConn(dev, 1);
         if (wifi.status !== 3 && wifi.status !== 6) env.WiFi.begin(conn && conn.ssid || 'WJSIM-WiFi', conn && conn.pass || '');
@@ -953,6 +982,65 @@
         if (p.type === 'neopixel') { const c = rgb(0); e.r = c.r; e.g = c.g; e.b = c.b; }
         else if (p.type === 'led-ring') { for (let i = 0; i < Math.min(this.n, e.pixels); i++) e.setPixel(i, rgb(i)); }
         else { const cols = e.cols || 8; for (let i = 0; i < Math.min(this.n, cols * (e.rows || 8)); i++) e.setPixel(Math.floor(i / cols), i % cols, rgb(i)); }
+      }
+    };
+
+    // --- UNO R4 WiFi: 12×8 LED matrix (Arduino_LED_Matrix + ArduinoGraphics text)
+    Object.assign(env, { NO_SCROLL: 0, SCROLL_LEFT: 1, SCROLL_RIGHT: 2, Font_4x6: { h: 6 }, Font_5x7: { h: 7 } });
+    env.ArduinoLEDMatrix = class {
+      constructor() { this.buf = new Uint8Array(96); this.color = 1; this.speed = 100; this.text = null; this.playing = false; }
+      _ok() { if (!B.matrix) { warn('matrix', `${B.name} ไม่มี LED Matrix ในตัว (มีเฉพาะ Arduino UNO R4 WiFi)`); return false; } return true; }
+      _show(src) { if (!this._ok()) return; dev.matrix = Uint8Array.from(src); dev.matrixDirty = true; }
+      _px(x, y, v) { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < 12 && y >= 0 && y < 8) this.buf[y * 12 + x] = v ? 1 : 0; }
+      begin() { this._ok(); return true; }
+      width() { return 12; } height() { return 8; }
+      loadFrame(f) { const o = new Uint8Array(96); for (let i = 0; i < 96; i++) o[i] = ((f[i >> 5] >>> 0) >>> (31 - (i & 31))) & 1; this.buf = o; this._show(o); }
+      renderBitmap(bm, rows = 8, cols = 12) {
+        const o = new Uint8Array(96), flat = !Array.isArray(bm[0]) && typeof bm[0] !== 'object';
+        for (let r = 0; r < Math.min(8, rows); r++) for (let c = 0; c < Math.min(12, cols); c++) o[r * 12 + c] = (flat ? bm[r * cols + c] : bm[r] && bm[r][c]) ? 1 : 0;
+        this.buf = o; this._show(o);
+      }
+      loadPixels(arr, n = 96) { const o = new Uint8Array(96); for (let i = 0; i < Math.min(96, n); i++) o[i] = arr[i] ? 1 : 0; this.buf = o; this._show(o); }
+      loadSequence(seq) { this.seq = seq; }
+      play(loop = false) {
+        if (!this.seq || !this.seq.length) return;
+        this.playing = true; let i = 0;
+        const step = () => {
+          if (!sim.running || !this.playing) return;
+          if (i >= this.seq.length) { if (!loop) { this.playing = false; return; } i = 0; }
+          const fr = this.seq[i++]; this.loadFrame(fr); sim.timers.push(setTimeout(step, Math.max(10, Number(fr[3]) || 66)));
+        };
+        step();
+      }
+      sequenceDone() { return !this.playing; }
+      autoscroll(ms) { this.speed = ms; }
+      // ArduinoGraphics drawing
+      beginDraw() { this.drawing = true; }
+      endDraw() { this.drawing = false; this._show(this.buf); }
+      clear() { this.buf = new Uint8Array(96); if (!this.drawing) this._show(this.buf); }
+      background(c) { this.buf = new Uint8Array(96).fill(c ? 1 : 0); }
+      stroke(c, g, b) { this.color = (g !== undefined ? c || g || b : c >>> 0) ? 1 : 0; } noStroke() { this.color = 0; } fill() { } noFill() { }
+      set(x, y, r, g, b) { this._px(x, y, g !== undefined ? r || g || b : r); }
+      point(x, y) { this._px(x, y, this.color); }
+      line(x0, y0, x1, y1) { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1); for (let i = 0; i <= n; i++) this._px(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, this.color); }
+      rect(x, y, w, h) { for (let i = 0; i < w; i++) { this._px(x + i, y, this.color); this._px(x + i, y + h - 1, this.color); } for (let j = 0; j < h; j++) { this._px(x, y + j, this.color); this._px(x + w - 1, y + j, this.color); } }
+      textFont() { } textScrollSpeed(ms) { this.speed = Number(ms) || 100; }
+      beginText(x = 0, y = 0, color) { this.text = { x, y, s: '' }; if (color !== undefined) this.color = color ? 1 : 0; }
+      print(v) { if (this.text) this.text.s += typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : String(v); }
+      println(v = '') { this.print(v); } write(v) { this.print(typeof v === 'number' ? String.fromCharCode(v) : v); }
+      _text(cols, x0, y0) { cols.forEach((col, i) => { for (let r = 0; r < 7; r++) if (col >> r & 1) this._px(x0 + i, y0 + r, this.color); }); }
+      async endText(dir = 0) {
+        const tx = this.text; this.text = null; if (!tx) return;
+        const cols = matrixText(tx.s);
+        if (!dir) { this._text(cols, tx.x, tx.y); if (!this.drawing) this._show(this.buf); return; }
+        const keep = this.buf;
+        for (let k = 0; k <= 12 + cols.length; k++) {
+          this.buf = new Uint8Array(96);
+          this._text(cols, dir === 2 ? k - cols.length : 12 - k, tx.y);
+          this._show(this.buf);
+          await env.delay(this.speed);
+        }
+        this.buf = keep;
       }
     };
 
@@ -1554,7 +1642,10 @@
           if (d.kind === 'bargraph') e.values = [];
           if (d.kind === 'seg7') e.values = [0, 0, 0, 0, 0, 0, 0, 0];
           if (d.kind === 'buzzer') e.hasSignal = false;
-          if (d.kind === 'board') { const B = IOTF.BOARDS[d.board]; e[B.led.prop] = false; if ('ledPower' in e) e.ledPower = false; }
+          if (d.kind === 'board') {
+            const B = IOTF.BOARDS[d.board]; e[B.led.prop] = false; if ('ledPower' in e) e.ledPower = false;
+            if (e.q) { ['.l13', '.lon'].forEach((c) => { const x = e.q(c); if (x) x.setAttribute('fill', c === '.lon' ? '#1b4d2a' : '#5a4a1a'); }); (e._mx || []).forEach((r) => r.setAttribute('fill', '#2c3b3d')); }
+          }
           if (d.kind === 'pixels') { if (p.type === 'neopixel') { e.r = e.g = e.b = 0; } else e.reset && e.reset(); }
           if (d.kind === 'lcd') { e.characters = new Uint8Array(p.type === 'lcd2004' ? 80 : 32).fill(32); e.backlight = false; e.cursor = e.blink = false; }
           if (d.kind === 'oled' && e.imageData) { e.imageData.data.fill(0); e.redraw && e.redraw(); }
