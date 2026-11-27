@@ -477,12 +477,6 @@
       d.classList.toggle('used', used.has(k));
       d.classList.toggle('inbb', inBB.has(k)); // a leg pushed into a breadboard hole: the hole shows it, the leg's own marker is hidden
     }));
-    // a resistor with both legs in the breadboard sits flat on it: only the body shows, not the wire legs
-    ed.project.parts.forEach((p) => {
-      if (p.type !== 'resistor' || !ed.els[p.id]) return;
-      const sr = ed.els[p.id].el.shadowRoot, lead = sr && sr.querySelector('rect[fill="#aaa"]');
-      if (lead) lead.style.display = inBB.has(p.id + ':1') && inBB.has(p.id + ':2') ? 'none' : '';
-    });
   }
   function pinWorld(p, q) {
     const n = ed.els[p.id], r = ((p.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
