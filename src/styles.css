@@ -40,7 +40,14 @@ input:focus,select:focus{outline:1px solid var(--sel);border-color:var(--sel)}
 #partList{overflow:auto;padding:0 6px 20px;flex:1}
 .cat{margin-top:6px}
 .cat h5{margin:8px 4px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mu);font-weight:600}
-.pitem{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:grab;user-select:none}
+.pitem{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;cursor:pointer;user-select:none}
+.pitem:active{cursor:grabbing}
+.pitem .thumb{flex:none;width:50px;height:38px;border-radius:5px;background:#262626;border-left:3px solid var(--c,#888);position:relative;overflow:hidden}
+.pitem .tbox{position:absolute;left:2px;top:2px;width:46px;height:34px;overflow:hidden;pointer-events:none}
+.dragghost{position:fixed;left:0;top:0;z-index:130;pointer-events:none;transform-origin:0 0;opacity:.6;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55));transition:opacity .12s}
+.dragghost>*{position:static!important;transform:none!important}
+.dragghost.out{opacity:.35}
+body.dragpart,body.dragpart *{cursor:grabbing!important}
 .pitem:hover{background:#363636}
 .pitem .ico{width:8px;height:8px;border-radius:2px;flex:none;background:var(--c,#888)}
 .pitem .ico img{max-width:28px;max-height:22px}

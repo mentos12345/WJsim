@@ -1090,11 +1090,40 @@
     IOTF.CATS.forEach((c) => {
       const items = list.filter((d) => d.cat === c);
       if (!items.length) return;
-      h += `<div class="cat"><h5>${c}</h5>` + items.map((d) => `<div class="pitem" data-type="${d.key}" title="ลากลงพื้นที่ทำงาน หรือดับเบิลคลิก"><span class="ico" style="--c:${CAT_ICON[c]}"></span><span class="nm">${d.name}${q && d.en && !/^[\x00-\x7f]*$/.test(d.name) ? `<small>${d.en}</small>` : ''}</span>${!basic && d.level !== 'basic' ? '<span class="lvl">ADV</span>' : ''}</div>`).join('') + '</div>';
+      h += `<div class="cat"><h5>${c}</h5>` + items.map((d) => `<div class="pitem" data-type="${d.key}" title="คลิกเพื่อเพิ่ม หรือลากไปวางตรงที่ต้องการ"><span class="thumb" data-t="${d.key}" style="--c:${CAT_ICON[c]}"></span><span class="nm">${d.name}${q && d.en && !/^[\x00-\x7f]*$/.test(d.name) ? `<small>${d.en}</small>` : ''}</span>${!basic && d.level !== 'basic' ? '<span class="lvl">ADV</span>' : ''}</div>`).join('') + '</div>';
     });
     const advOnly = basic && q ? Object.values(P).filter((d) => d.level !== 'basic' && words.every((w) => hay(d).includes(w))).length : 0;
-    $('partList').innerHTML = h || `<p class="muted small">ไม่พบอุปกรณ์${advOnly ? ` ในโหมด Basic (มีในโหมด Advanced ${advOnly} ชิ้น)` : ''}</p>`;
+    $('partList').innerHTML = h || `<p class="muted small">ไม่พบอุปกรณ์${advOnly ? ` ในโหมด Basic (มีในโหมด Advanced ${advOnly} ชิ้น)` : ''}</p>`;    $('partList').querySelectorAll('.thumb').forEach((t) => t.appendChild(thumbFor(t.dataset.t)));
+    requestAnimationFrame(() => fitThumbs());
   };
+  /* ---------- part pictures: thumbnails in the list and the shadow while dragging ---------- */
+  // a real part element (same drawing as on the stage), made once per type and moved between list renders
+  const thumbs = {};
+  function partPicture(type) {
+    const d = P[type], el = document.createElement(d.tag);
+    Object.entries(d.attrs || {}).forEach(([k, v]) => { try { el[k] = v; } catch (e) { /* read-only */ } });
+    el.style.cssText = 'position:absolute;left:0;top:0;display:inline-block;transform-origin:0 0;pointer-events:none';
+    return el;
+  }
+  function thumbFor(type) {
+    if (!thumbs[type]) { const box = document.createElement('span'); box.className = 'tbox'; const el = partPicture(type); box.appendChild(el); thumbs[type] = { box, el, ok: false }; }
+    return thumbs[type].box;
+  }
+  function fitThumbs(tries = 0) {
+    let left = false;
+    Object.values(thumbs).forEach((t) => {
+      if (t.ok || !t.box.isConnected) return;
+      t.el.style.transform = 'none';
+      const w = t.el.offsetWidth, h = t.el.offsetHeight;
+      if (!w || !h) { left = true; return; }
+      const W = 46, H = 34, k = Math.min(W / w, H / h, 1);
+      t.el.style.transform = `translate(${(W - w * k) / 2}px,${(H - h * k) / 2}px) scale(${k})`;
+      t.ok = true;
+    });
+    if (left && tries < 20) setTimeout(() => fitThumbs(tries + 1), 150); // drawings that are still rendering
+  }
+  ed.fitThumbs = () => requestAnimationFrame(() => fitThumbs());
+
   // add a part in the middle of the visible stage (double-click, or a tap on a phone/tablet)
   ed.addAtCenter = function (type) {
     if (ed.running) return;
@@ -1104,6 +1133,7 @@
   };
   ed.initPalette = function () {
     $('partSearch').oninput = ed.renderPalette;
+    $('partList').addEventListener('pointerenter', () => ed.fitThumbs()); // e.g. the list was hidden on a phone when it was drawn
     $('partList').addEventListener('pointerdown', (e) => {
       const it = e.target.closest('.pitem'); if (!it || ed.running) return;
       const type = it.dataset.type;
@@ -1118,29 +1148,32 @@
         return;
       }
       e.preventDefault();
-      const ghost = document.createElement('div');
-      ghost.textContent = P[type].name;
-      ghost.style.cssText = 'position:fixed;pointer-events:none;background:#e87d0d;color:#fff;padding:3px 9px;border-radius:5px;z-index:99;font-size:12px';
+      // the shadow: the part itself, at the stage's zoom, following the pointer
+      const ghost = document.createElement('div'), pic = partPicture(type);
+      ghost.className = 'dragghost'; ghost.appendChild(pic);
       let dragging = false;
       const mv = (ev) => {
-        if (!dragging && Math.abs(ev.clientX - e.clientX) + Math.abs(ev.clientY - e.clientY) > 4) { dragging = true; document.body.appendChild(ghost); }
-        ghost.style.left = ev.clientX + 8 + 'px'; ghost.style.top = ev.clientY + 8 + 'px';
+        if (!dragging && Math.abs(ev.clientX - e.clientX) + Math.abs(ev.clientY - e.clientY) > 4) { dragging = true; document.body.appendChild(ghost); document.body.classList.add('dragpart'); }
+        if (!dragging) return;
+        const r = $('stage').getBoundingClientRect(), inStage = ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top && ev.clientY < r.bottom;
+        const z = inStage ? ed.zoom : Math.min(ed.zoom, 0.6);
+        // the part's corner sits where it will land (the drop puts it 20,15 up-left of the pointer)
+        ghost.style.transform = `translate(${ev.clientX - 20 * z}px,${ev.clientY - 15 * z}px) scale(${z})`;
+        ghost.classList.toggle('out', !inStage);
       };
       const up = (ev) => {
-        window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); ghost.remove();
+        window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); ghost.remove(); document.body.classList.remove('dragpart');
+        if (!dragging) { ed.addAtCenter(type); return; } // a plain click adds it in the middle of the view
         const r = $('stage').getBoundingClientRect();
-        if (dragging && ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top && ev.clientY < r.bottom) {
+        if (ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top && ev.clientY < r.bottom) {
           const w = ed.toWorld(ev.clientX, ev.clientY), np = ed.addPart(type, w.x - 20, w.y - 15);
           if (np) setTimeout(() => { if (ed.snapToBreadboard(np)) changed('move'); }, 80);
         }
       };
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
     });
-    $('partList').addEventListener('dblclick', (e) => {
-      const it = e.target.closest('.pitem'); if (!it || ed.running) return;
-      ed.addAtCenter(it.dataset.type);
-    });
   };
+
 
   ed.setRunning = function (on) {
     ed.running = on; document.body.classList.toggle('running', on);
