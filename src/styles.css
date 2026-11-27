@@ -63,7 +63,7 @@ body.dragpart,body.dragpart *{cursor:grabbing!important}
 #wireOverlay{pointer-events:none}
 #partsLayer,#bbLayer{position:absolute;left:0;top:0}
 .part{position:absolute;left:0;top:0;transform-origin:0 0}
-.part>.el{display:inline-block;transform-origin:0 0}
+.part>.el{display:inline-block;transform-origin:0 0;vertical-align:top;line-height:0}
 .part .hit{position:absolute;inset:0;cursor:move}
 body.running .part .hit{display:none}
 .part.sel .el{filter:drop-shadow(0 0 0 var(--or)) drop-shadow(0 0 3px var(--or2))}
