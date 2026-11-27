@@ -367,3 +367,6 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 .widget .lamp.on{background:#3cff7a;box-shadow:0 0 12px #3cff7a}
 .widget .cmsg{height:70px;margin-top:6px}
 #cwidgets .gauge{color:var(--tx)}
+/* a part's leg pushed into a breadboard hole: the hole shows it */
+.part .pin.inbb{opacity:0}
+.part .pin.inbb:hover,.part .pin.inbb.armed{opacity:1}

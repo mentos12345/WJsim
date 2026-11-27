@@ -260,7 +260,7 @@
       }
     });
     // breadboards: holes in a strip are one node; a part pin sitting on a hole joins that strip
-    const plugged = {};
+    const plugged = {}, inBB = new Set();
     const bbs = ed.project.parts.filter((p) => P[p.type].kind === 'breadboard' && ed.els[p.id]);
     bbs.forEach((bb) => {
       const g = P[bb.type].geom, sk = (h) => key(bb.id, '~' + g.strip(h));
@@ -271,12 +271,28 @@
         (ed.els[p.id].el.pinInfo || []).forEach((q) => {
           const w = pinWorld(p, q), l = toLocal(w.x, w.y), h = g.holeAt(l.x, l.y);
           if (!h) return;
-          u(key(p.id, q.name), sk(h)); connected.add(key(p.id, q.name));
+          u(key(p.id, q.name), sk(h)); connected.add(key(p.id, q.name)); inBB.add(key(p.id, q.name));
           (plugged[bb.id] = plugged[bb.id] || new Set()).add(h);
         });
       });
     });
     ed.plugged = plugged;
+    // a pin placed right on another part's pin (a resistor leg on an LED leg, on a board pin…) is joined without a wire
+    const touching = new Set(), spots = [];
+    ed.project.parts.forEach((p) => {
+      if (P[p.type].kind === 'breadboard' || !ed.els[p.id]) return;
+      (ed.els[p.id].el.pinInfo || []).forEach((q) => { const w = pinWorld(p, q); spots.push({ id: p.id, pin: q.name, x: w.x, y: w.y }); });
+    });
+    const grid = {};
+    spots.forEach((sp) => { const gk = Math.round(sp.x / 4) + ',' + Math.round(sp.y / 4); (grid[gk] = grid[gk] || []).push(sp); });
+    spots.forEach((a) => {
+      const gx = Math.round(a.x / 4), gy = Math.round(a.y / 4);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) (grid[(gx + i) + ',' + (gy + j)] || []).forEach((b) => {
+        if (b.id === a.id || Math.hypot(a.x - b.x, a.y - b.y) > 2.5) return;
+        u(key(a.id, a.pin), key(b.id, b.pin)); connected.add(key(a.id, a.pin)); touching.add(key(a.id, a.pin));
+      });
+    });
+    ed.touching = touching; ed.inBB = inBB;
     const memoPins = {};
     const api = {
       find: f, GND, VCC,
@@ -452,8 +468,15 @@
   }
   function markUsedPins() {
     const used = new Set(); ed.project.wires.forEach((w) => { used.add(w.a.p + ':' + w.a.pin); used.add(w.b.p + ':' + w.b.pin); });
-    if (ed.project.parts.some((p) => P[p.type].kind === 'breadboard')) { ed.nets(); Object.entries(ed.plugged || {}).forEach(([id, set]) => set.forEach((h) => used.add(id + ':' + h))); }
-    Object.entries(ed.els).forEach(([id, n]) => n.wrap.querySelectorAll('.pin').forEach((d) => d.classList.toggle('used', used.has(id + ':' + d.dataset.pin))));
+    ed.nets();
+    Object.entries(ed.plugged || {}).forEach(([id, set]) => set.forEach((h) => used.add(id + ':' + h)));
+    (ed.touching || new Set()).forEach((k) => used.add(k));
+    const inBB = ed.inBB || new Set();
+    Object.entries(ed.els).forEach(([id, n]) => n.wrap.querySelectorAll('.pin').forEach((d) => {
+      const k = id + ':' + d.dataset.pin;
+      d.classList.toggle('used', used.has(k));
+      d.classList.toggle('inbb', inBB.has(k)); // a leg pushed into a breadboard hole: the hole shows it, the leg's own marker is hidden
+    }));
   }
   function pinWorld(p, q) {
     const n = ed.els[p.id], r = ((p.rot || 0) % 360 + 360) % 360, w = n.w, h = n.h;
@@ -481,6 +504,17 @@
         const w = pinWorld(p, q), l = toLocal(w.x, w.y), hn = g.holeAt(l.x, l.y, 6); if (!hn) return;
         const hw = ed.pinPos(bb.id, hn), d = Math.hypot(hw.x - w.x, hw.y - w.y);
         if (!best || d < best.d) best = { d, dx: hw.x - w.x, dy: hw.y - w.y };
+      });
+    });
+    // …or a leg that lands on another part's leg plugs straight into it
+    (ed.els[p.id].el.pinInfo || []).forEach((q) => {
+      const w = pinWorld(p, q);
+      ed.project.parts.forEach((o) => {
+        if (o === p || P[o.type].kind === 'breadboard' || !ed.els[o.id]) return;
+        (ed.els[o.id].el.pinInfo || []).forEach((r) => {
+          const ow = pinWorld(o, r), d = Math.hypot(ow.x - w.x, ow.y - w.y);
+          if (d < 6 && (!best || d < best.d)) best = { d, dx: ow.x - w.x, dy: ow.y - w.y };
+        });
       });
     });
     if (!best || best.d < 0.05) return !!best;
@@ -634,7 +668,7 @@
       if (ed.running) { select(p.id, true); return; }
       if (!e.target.classList.contains('hit')) return;
       e.stopPropagation();
-      if (ed.armed) { cancelArm(); }
+      if (ed.armed) { const t = nearestPin(e.clientX, e.clientY, 16); if (t && !(t.p === ed.armed.p && t.pin === ed.armed.pin)) { finishWire(t.p, t.pin); return; } cancelArm(); }
       select(p.id);
       if (ed.isBoard(p)) ed.setActiveBoard(p.id);
       const start = ed.toWorld(e.clientX, e.clientY), ox = p.x, oy = p.y;
@@ -676,10 +710,25 @@
     if (w) { if (bends.length) { w.points = bends.map((q) => ({ x: q.x, y: q.y })); } ed.selWire = null; renderWires(); }
   }
   // the pin under a screen point, even when a wire is drawn over it
-  function pinAt(x, y) {
+  function pinAt(x, y, near = 10) {
     const el = document.elementsFromPoint(x, y).find((e) => e.classList && e.classList.contains('pin'));
-    if (!el) return null;
-    const part = el.closest('.part'); return part ? { p: part.dataset.id, pin: el.dataset.pin } : null;
+    if (el) { const part = el.closest('.part'); if (part) return { p: part.dataset.id, pin: el.dataset.pin }; }
+    return near ? nearestPin(x, y, near) : null;
+  }
+  // the closest pin (or breadboard hole) within `near` screen pixels, so a wire dropped on a leg or a body still lands
+  function nearestPin(x, y, near) {
+    const w = ed.toWorld(x, y), lim = near / ed.zoom;
+    let best = null;
+    ed.project.parts.forEach((p) => {
+      const n = ed.els[p.id]; if (!n) return;
+      (n.el.pinInfo || []).forEach((q) => {
+        const pw = pinWorld(p, q), d = Math.hypot(pw.x - w.x, pw.y - w.y);
+        // a part's own leg beats the hole it sits in
+        const score = d + (P[p.type].kind === 'breadboard' ? 0.5 : 0);
+        if (d <= lim && (!best || score < best.score)) best = { p: p.id, pin: q.name, score };
+      });
+    });
+    return best && { p: best.p, pin: best.pin };
   }
   ed.pinAt = pinAt;
   function highlightArmed() {
