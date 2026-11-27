@@ -695,7 +695,7 @@
   function hint(msg) {
     $('stageHint').textContent = msg || (ed.running ? 'กำลังจำลอง: กดปุ่ม/หมุนลูกบิดบนชิ้นส่วนได้ คลิกชิ้นส่วนเพื่อปรับค่าเซ็นเซอร์' :
       ed.isBasic() ? 'Basic: ลากอุปกรณ์จากด้านซ้าย แล้วคลิกขาอุปกรณ์ต่อกับขาบอร์ดเอง (ไฟเลี้ยง/กราวด์ต่อให้ในตัว) · คลิกอุปกรณ์เพื่อดูว่าต่อกับขาไหน' :
-        'Advanced: คลิกขาหนึ่งแล้วคลิกอีกขาเพื่อต่อสาย ต้องต่อไฟเลี้ยงและกราวด์เอง · R หมุน · Delete ลบ · Ctrl+Z ย้อน');
+        'Advanced: คลิกขาหนึ่งแล้วคลิกอีกขาเพื่อต่อสาย ต้องต่อไฟเลี้ยงและกราวด์เอง · R หมุน · D ทำซ้ำ · Delete ลบ · Ctrl+Z ย้อน');
   }
   ed.hint = hint;
 
@@ -971,6 +971,13 @@
     p.x = Math.round((cx - w1 / 2) * 100) / 100; p.y = Math.round((cy - h1 / 2) * 100) / 100;
     layoutPart(p); ed.snapToBreadboard(p); renderWires(); changed('move');
   };
+  // a copy of the selected part (same settings), a little down-right of it
+  ed.duplicateSel = function () {
+    const p = ed.part(ed.sel); if (!p || ed.running) return null;
+    const np = ed.addPart(p.type, p.x + 24, p.y + 24, { rot: p.rot || 0, attrs: JSON.parse(JSON.stringify(p.attrs || {})), sim: JSON.parse(JSON.stringify(p.sim || {})) });
+    if (np && ed.project.programs && ed.project.programs[p.id] && ed.isBoard(np)) ed.project.programs[np.id] = JSON.parse(JSON.stringify(ed.project.programs[p.id]));
+    return np;
+  };
   ed.deleteSel = function () {
     if (ed.running) return;
     if (ed.selWire) ed.removeWire(ed.selWire);
@@ -1049,7 +1056,7 @@
       });
       if (rows.length) h += `<div class="pinlist">${rows.join('<br>')}</div>`;
     }
-    h += `<div class="btnrow">${ed.running ? '' : '<button class="btn" data-act="rot">หมุน (R)</button><button class="btn" data-act="del">ลบ</button>'}</div>`;
+    h += `<div class="btnrow">${ed.running ? '' : '<button class="btn" data-act="rot">หมุน (R)</button><button class="btn" data-act="dup">ทำซ้ำ (D)</button><button class="btn" data-act="del">ลบ</button>'}</div>`;
     box.innerHTML = h;
     box.querySelectorAll('[data-sim]').forEach((inp) => inp.oninput = () => {
       const k = inp.dataset.sim;
@@ -1073,6 +1080,7 @@
     const r = box.querySelector('[data-rfid]'); if (r) r.oninput = () => { p.sim.uid = r.value; };
     const tap = box.querySelector('[data-act=tap]'); if (tap) tap.onclick = () => { p.sim.tap = Date.now(); if (IOTF.sim) IOTF.sim.event('rfid', p); };
     const rot = box.querySelector('[data-act=rot]'); if (rot) rot.onclick = ed.rotateSel;
+    const dup = box.querySelector('[data-act=dup]'); if (dup) dup.onclick = ed.duplicateSel;
     const del = box.querySelector('[data-act=del]'); if (del) del.onclick = () => ed.removePart(p.id);
     const bn = box.querySelector('#boardNameInput'); if (bn) bn.onchange = () => { p.name = bn.value.trim() || nextBoardName(p.type); refreshBoardLabels(); changed('active'); };
     const ec = box.querySelector('[data-act=editcode]'); if (ec) ec.onclick = () => { ed.setActiveBoard(p.id); renderProps(); };
