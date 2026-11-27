@@ -54,11 +54,20 @@
       lits.push(v); return '\u0001' + (lits.length - 1) + '\u0002';
     });
     // "abc" "def" (C joins neighbouring literals) → one literal, keeping the line breaks between them
-    const joined = out.replace(/\u0001(\d+)\u0002(?:\s*\u0001\d+\u0002)+/g, (m) => {
-      const ids = [...m.matchAll(/\u0001(\d+)\u0002/g)].map((x) => +x[1]);
+    // (the line breaks go after the end of the statement, so every line still ends the way the linter expects)
+    let joined = '', last = 0;
+    const re = /\u0001(\d+)\u0002(?:\s*\u0001\d+\u0002)+/g;
+    let jm;
+    while ((jm = re.exec(out))) {
+      const ids = [...jm[0].matchAll(/\u0001(\d+)\u0002/g)].map((x) => +x[1]);
       lits.push('"' + ids.map((i) => lits[i].slice(1, -1)).join('') + '"');
-      return '\u0001' + (lits.length - 1) + '\u0002' + '\n'.repeat((m.match(/\n/g) || []).length);
-    });
+      joined += out.slice(last, jm.index) + '\u0001' + (lits.length - 1) + '\u0002';
+      last = jm.index + jm[0].length;
+      const n = (jm[0].match(/\n/g) || []).length, semi = out.indexOf(';', last), nl = out.indexOf('\n', last);
+      if (n && semi >= 0 && (nl < 0 || semi < nl)) { joined += out.slice(last, semi + 1) + '\n'.repeat(n); last = semi + 1; re.lastIndex = last; }
+      else joined += '\n'.repeat(n);
+    }
+    joined += out.slice(last);
     return { out: joined, lits, restore: (x) => x.replace(/\u0001(\d+)\u0002/g, (_, i) => lits[+i]) };
   }
 
