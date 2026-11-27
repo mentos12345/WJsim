@@ -88,8 +88,23 @@
   };
 
   /* ---------- tiny browser: send HTTP requests to boards running a WebServer ---------- */
-  // pages that look like HTML are shown as a web page (no scripts run in it); links and forms go back to the simulated board
-  const looksHtml = (t) => /<\s*(!doctype|html|head|body|h[1-6]|p|div|a|button|form|table|ul|br)\b/i.test(t || '');
+  // HTML replies are shown as a real web page in a sandboxed frame (webview.html): its scripts run there with no access
+  // to the app or the internet, and its fetch()/XMLHttpRequest, links and forms come back here and go to the simulated board
+  const looksHtml = (t, type) => /html/i.test(type || '') || /<\s*(!doctype|html|head|body|h[1-6]|p|div|a|button|form|table|ul|br)\b/i.test(t || '');
+  let webReady = false, webPage = null;
+  const frameWin = () => $('httpFrame') && $('httpFrame').contentWindow;
+  const showPage = () => { if (webReady && webPage && frameWin()) frameWin().postMessage({ wjsim: 'page', html: webPage.html, url: webPage.url }, '*'); };
+  window.addEventListener('message', async (e) => {
+    if (!frameWin() || e.source !== frameWin()) return;
+    const d = e.data || {};
+    if (d.wjsim === 'ready') { webReady = true; showPage(); return; }
+    if (d.wjsim === 'nav' && typeof d.url === 'string') { iot.browse(d.url, d.method === 'POST' ? 'POST' : 'GET', typeof d.body === 'string' ? d.body : ''); return; }
+    if (d.wjsim === 'http' && typeof d.url === 'string' && /^https?:\/\//.test(d.url)) {
+      const method = /^(GET|POST|PUT|PATCH|DELETE)$/.test(d.method) ? d.method : 'GET';
+      const r = IOTF.sim.running ? await IOTF.sim.httpRequest(null, method, d.url, typeof d.body === 'string' ? d.body.slice(0, 100000) : '', 4000) : { code: -1, body: '' };
+      if (frameWin()) frameWin().postMessage({ wjsim: 'res', id: d.id, code: r.code, body: r.body, type: r.type || 'text/plain' }, '*');
+    }
+  });
   iot.browse = async function (url, method = 'GET', body = '') {
     const out = $('httpOut'), page = $('httpPage'), fr = $('httpFrame'); if (!out) return;
     if (!IOTF.sim.running) { out.hidden = false; page.hidden = true; out.textContent = 'เริ่มจำลองก่อน แล้วค่อยเปิด URL ของบอร์ด'; return; }
@@ -97,24 +112,11 @@
     $('httpUrl').value = url;
     out.hidden = false; out.textContent = method + ' ' + url + ' …';
     const r = await IOTF.sim.httpRequest(null, method, url, body, 4000);
-    if (r.code < 0) { page.hidden = true; out.textContent = `เชื่อมต่อไม่ได้ (${r.code === -11 ? 'หมดเวลา' : 'ไม่มีเซิร์ฟเวอร์ที่ ' + url}) — บอร์ดต้องต่อ WiFi และเรียก server.begin() กับ server.handleClient()`; return; }
-    if (!looksHtml(r.body)) { page.hidden = true; out.textContent = `HTTP ${r.code}\n\n${r.body}`; return; }
-    out.hidden = true;
-    page.hidden = false; $('httpAddr').textContent = `HTTP ${r.code} · ${url}`;
-    fr.onload = () => {
-      const doc = fr.contentDocument; if (!doc) return;
-      const go = (href, m = 'GET', b = '') => { let u; try { u = new URL(href, url); } catch (e) { return; } if (u.protocol !== 'http:' && u.protocol !== 'https:') return; iot.browse(u.href, m, b); };
-      doc.addEventListener('click', (e) => {
-        const a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
-        e.preventDefault(); const h = a.getAttribute('href'); if (h && !h.startsWith('#')) go(h);
-      });
-      doc.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const f = e.target, q = new URLSearchParams(new FormData(f)).toString(), m = (f.getAttribute('method') || 'GET').toUpperCase(), act = f.getAttribute('action') || url;
-        if (m === 'POST') go(act, 'POST', q); else { const u = new URL(act, url); u.search = q; go(u.href); }
-      });
-    };
-    fr.srcdoc = r.body;
+    if (r.code < 0) { page.hidden = true; out.textContent = `เชื่อมต่อไม่ได้ (${r.code === -11 ? 'หมดเวลา' : 'ไม่มีเซิร์ฟเวอร์ที่ ' + url}) — บอร์ดต้องต่อ WiFi (หรือเปิด WiFi.softAP) และเรียก server.begin() กับ server.handleClient()`; return; }
+    if (!looksHtml(r.body, r.type)) { page.hidden = true; out.textContent = `HTTP ${r.code}\n\n${r.body}`; return; }
+    out.hidden = true; page.hidden = false; $('httpAddr').textContent = `HTTP ${r.code} · ${url}`;
+    webPage = { html: r.body, url };
+    if (!fr.getAttribute('src')) { webReady = false; fr.src = 'webview.html'; } else showPage();
   };
   if ($('btnHttpBig')) $('btnHttpBig').onclick = () => { const pg = $('httpPage'), big = pg.classList.toggle('big'); $('btnHttpBig').textContent = big ? '✕ ย่อ' : '⤢ ขยาย'; };
 

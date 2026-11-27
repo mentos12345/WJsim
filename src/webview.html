@@ -1,0 +1,61 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<!-- WJSIM: shows a web page served by a simulated board. It runs in a sandboxed frame with no origin of its own,
+     so the page's scripts cannot reach the app or the internet; fetch/XMLHttpRequest, links and forms are passed
+     to the app, which answers from the simulated board. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'">
+<script>
+(function () {
+  'use strict';
+  const P = window.parent, waiting = {};
+  let base = 'http://192.168.4.1/', seq = 0;
+  const abs = (u) => { try { return new URL(u, base).href; } catch (e) { return base; } };
+  function ask(method, url, body) {
+    return new Promise((res) => { const id = ++seq; waiting[id] = res; P.postMessage({ wjsim: 'http', id, method, url: abs(url), body: body == null ? '' : String(body) }, '*'); });
+  }
+  window.fetch = function (input, init) {
+    init = init || {};
+    const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+    const method = String(init.method || (input && input.method) || 'GET').toUpperCase();
+    return ask(method, url, init.body).then((r) => {
+      if (r.code < 0) throw new TypeError('Failed to fetch (' + (r.code === -11 ? 'timeout' : 'no server') + ')');
+      return new Response(r.body, { status: r.code >= 200 && r.code <= 599 ? r.code : 200, headers: { 'Content-Type': r.type || 'text/plain' } });
+    });
+  };
+  window.XMLHttpRequest = class {
+    constructor() { this.readyState = 0; this.status = 0; this.responseText = ''; this.response = ''; }
+    open(m, u) { this.m = String(m || 'GET').toUpperCase(); this.u = u; this.readyState = 1; }
+    setRequestHeader() { } overrideMimeType() { } abort() { } getResponseHeader() { return null; } getAllResponseHeaders() { return ''; }
+    addEventListener(t, f) { this['on' + t] = f; }
+    send(b) {
+      ask(this.m, this.u, b).then((r) => {
+        this.status = Math.max(0, r.code); this.responseText = this.response = r.body; this.readyState = 4;
+        if (this.onreadystatechange) this.onreadystatechange();
+        if (r.code < 0) { if (this.onerror) this.onerror(); } else if (this.onload) this.onload();
+      });
+    }
+  };
+  function onMsg(e) {
+    if (e.source !== P) return;
+    const d = e.data || {};
+    if (d.wjsim === 'res' && waiting[d.id]) { waiting[d.id](d); delete waiting[d.id]; }
+    if (d.wjsim === 'page' && typeof d.html === 'string') { base = d.url || base; document.open(); document.write(d.html); document.close(); install(); }
+  }
+  function install() {
+    window.addEventListener('message', onMsg);
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
+      const h = a.getAttribute('href'); if (!h || h[0] === '#' || /^javascript:/i.test(h)) return;
+      e.preventDefault(); P.postMessage({ wjsim: 'nav', url: abs(h), method: 'GET' }, '*');
+    }, true);
+    document.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = e.target, q = new URLSearchParams(new FormData(f)).toString(), m = String(f.getAttribute('method') || 'GET').toUpperCase(), act = new URL(abs(f.getAttribute('action') || base));
+      if (m === 'POST') P.postMessage({ wjsim: 'nav', url: act.href, method: 'POST', body: q }, '*');
+      else { act.search = q; P.postMessage({ wjsim: 'nav', url: act.href, method: 'GET' }, '*'); }
+    }, true);
+  }
+  install();
+  P.postMessage({ wjsim: 'ready' }, '*');
+})();
+</script></head><body></body></html>

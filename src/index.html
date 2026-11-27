@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; script-src 'self' blob: https://apis.google.com https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com https://avatars.githubusercontent.com; media-src 'self' blob:; connect-src 'self' https://*.googleapis.com https://www.google.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://www.google.com">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; script-src 'self' blob: https://apis.google.com https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com https://avatars.githubusercontent.com; media-src 'self' blob:; connect-src 'self' https://*.googleapis.com https://www.google.com; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://www.google.com">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WJSIM ออนไลน์ – จำลองวงจร IoT ESP32 Arduino ฟรีบนเว็บ</title>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"WJSIM","alternateName":["WJ SIM","WJSIM IoT Simulator"],"url":"https://wjsim.vercel.app/"}</script>
@@ -106,7 +106,7 @@
       <pre id="httpOut" class="log mono"></pre>
       <div id="httpPage" hidden>
         <div class="webbar"><span id="httpAddr" class="mono small"></span><div class="spacer"></div><button class="tb small" id="btnHttpBig" title="ขยาย/ย่อหน้าเว็บ">⤢ ขยาย</button></div>
-        <iframe id="httpFrame" sandbox="allow-same-origin allow-forms" title="หน้าเว็บจากบอร์ดที่จำลอง"></iframe>
+        <iframe id="httpFrame" sandbox="allow-scripts allow-forms" title="หน้าเว็บจากบอร์ดที่จำลอง"></iframe>
       </div>
       <p class="muted small">เครือข่ายจำลองอยู่ในแอป ไม่ได้ส่งข้อมูลออกอินเทอร์เน็ต วางบอร์ดหลายตัวบนวงจรเดียวกันเพื่อให้ส่งข้อมูลหากันได้ (ESP-NOW, UDP, HTTP, MQTT, LoRa) หรือเปิดหลายหน้าต่าง (เมนูไฟล์ → หน้าต่างใหม่)</p>
     </div>

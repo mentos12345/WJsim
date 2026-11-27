@@ -21,6 +21,22 @@
     while (i < s.length) {
       const c = s[i], n = s[i + 1];
       if (q) { out += c; if (c === '\\') { out += n || ''; i += 2; continue; } if (c === q) q = null; i++; continue; }
+      // raw string R"tag( … )tag" → an ordinary "…" literal; its line breaks go after the statement so line numbers stay right
+      if (c === 'R' && n === '"' && !/[\w]/.test(s[i - 1] || '') || (/^(u8|u|U|L)R"/.test(s.slice(i, i + 4)) && !/[\w]/.test(s[i - 1] || ''))) {
+        const st = s.indexOf('R"', i), open = s.indexOf('(', st);
+        const tag = s.slice(st + 2, open);
+        const close = open > 0 && tag.length <= 16 && !/[\s()\\]/.test(tag) ? s.indexOf(')' + tag + '"', open) : -1;
+        if (close > 0) {
+          const body = s.slice(open + 1, close);
+          out += '"' + body.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\t/g, '\\t').replace(/\n/g, '\\n') + '"';
+          i = close + tag.length + 2;
+          // the rest of the statement (usually just ';'), then the line breaks the literal took up
+          const semi = s.indexOf(';', i), nl = s.indexOf('\n', i);
+          if (semi >= 0 && (nl < 0 || semi < nl)) { out += s.slice(i, semi + 1); i = semi + 1; }
+          out += '\n'.repeat((body.match(/\n/g) || []).length);
+          continue;
+        }
+      }
       if (c === '"' || c === "'") { q = c; out += c; i++; continue; }
       if (c === '/' && n === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
       if (c === '/' && n === '*') { i += 2; while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) { if (s[i] === '\n') out += '\n'; i++; } i += 2; continue; }
@@ -37,7 +53,13 @@
       if (m[0] === "'") v = '"' + m.slice(1, -1).replace(/"/g, '\\"') + '"';
       lits.push(v); return '\u0001' + (lits.length - 1) + '\u0002';
     });
-    return { out, lits, restore: (x) => x.replace(/\u0001(\d+)\u0002/g, (_, i) => lits[+i]) };
+    // "abc" "def" (C joins neighbouring literals) → one literal, keeping the line breaks between them
+    const joined = out.replace(/\u0001(\d+)\u0002(?:\s*\u0001\d+\u0002)+/g, (m) => {
+      const ids = [...m.matchAll(/\u0001(\d+)\u0002/g)].map((x) => +x[1]);
+      lits.push('"' + ids.map((i) => lits[i].slice(1, -1)).join('') + '"');
+      return '\u0001' + (lits.length - 1) + '\u0002' + '\n'.repeat((m.match(/\n/g) || []).length);
+    });
+    return { out: joined, lits, restore: (x) => x.replace(/\u0001(\d+)\u0002/g, (_, i) => lits[+i]) };
   }
 
 

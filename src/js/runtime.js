@@ -617,7 +617,7 @@
       status: () => wifi.status, isConnected: () => wifi.status === 3, disconnect() { wifi.status = 6; IOTF.iot.setWifi('ตัดการเชื่อมต่อ', false, dev.name); return true; },
       reconnect() { return true; }, localIP: () => new IPAddress(wifi.ip), gatewayIP: () => new IPAddress('192.168.1.1'), subnetMask: () => new IPAddress('255.255.255.0'),
       macAddress: () => ni.mac, RSSI: () => (wifi.status === 3 ? -52 - Math.floor(Math.random() * 6) : 0), SSID: () => wifi.ssid,
-      softAP() { return true; }, softAPIP: () => new IPAddress('192.168.4.1'), scanNetworks: () => 1, waitForConnectResult: async () => { while (wifi.status !== 3) await env.delay(100); return 3; }
+      softAP(ssid) { if (!B.wifi) { warn('wifi', `${B.name} ไม่มี WiFi ในตัว`); return false; } wifi.ap = String(ssid ?? 'ESP32-AP'); if (IOTF.iot && IOTF.iot.setWifi) IOTF.iot.setWifi(`${dev.name}: Access Point "${wifi.ap}" · 192.168.4.1`, true); const u = document.getElementById('httpUrl'); if (u && /192\.168\.1\.101/.test(u.value)) u.value = 'http://192.168.4.1/'; return true; }, softAPdisconnect() { wifi.ap = null; return true; }, softAPIP: () => new IPAddress('192.168.4.1'), scanNetworks: () => 1, waitForConnectResult: async () => { while (wifi.status !== 3) await env.delay(100); return 3; }
     };
     class IPAddress { constructor(s) { this.s = typeof s === 'string' ? s : [...arguments].join('.'); } toString() { return this.s; } }
     env.IPAddress = IPAddress;
@@ -1328,6 +1328,7 @@
         safeCall(async () => { await fn(); if (!req.done) this.send(200, 'text/plain', ''); });
       }
       send(code, type, body) { const req = this.cur; if (!req || req.done) return; req.done = true; this.busy = false; this.cur = null; req.resolve({ code, type: type || 'text/plain', body: body === undefined ? '' : String(body) }); }
+      send_P(code, type, body) { this.send(code, type, body); }
       sendHeader() { } setContentLength() { } enableCORS() { }
       arg(name) { if (!this.cur) return ''; if (typeof name === 'number') return Object.values(this.cur.args)[name] ?? ''; return this.cur.args[name] ?? ''; }
       argName(i) { return this.cur ? Object.keys(this.cur.args)[i] ?? '' : ''; }
@@ -1535,7 +1536,8 @@
     if (!m) return Promise.resolve({ code: -1, body: '' });
     if (from && (!from.wifi || from.wifi.status !== 3)) { warnDev(from, 'httpw', 'ส่ง HTTP ไม่ได้: ยังไม่ได้เชื่อมต่อ WiFi'); return Promise.resolve({ code: -1, body: '' }); }
     const host = m[1], port = +m[2] || 80, path = decodeURIComponent(m[3] || '/');
-    const target = sim.devices.find((d) => d.wifi && d.wifi.status === 3 && d.wifi.ip === host);
+    // a board's own station IP, or 192.168.4.1 when it runs its own access point (WiFi.softAP)
+    const target = sim.devices.find((d) => d.wifi && ((d.wifi.status === 3 && d.wifi.ip === host) || (d.wifi.ap && host === '192.168.4.1')));
     const server = target && target.servers.find((x) => x.port === port);
     if (!server) return new Promise((r) => setTimeout(() => r({ code: -1, body: '' }), 150));
     const args = {};
