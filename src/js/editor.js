@@ -961,9 +961,15 @@
   };
   ed.setWireStyle = function (st) { ed.project.wireStyle = st; renderWires(); changed('style'); };
 
+  // turn 90° around the middle of the part (not its corner), so it stays where it was
   ed.rotateSel = function () {
-    const p = ed.part(ed.sel); if (!p || ed.running) return;
-    snapshot(); p.rot = ((p.rot || 0) + 90) % 360; layoutPart(p); renderWires(); changed('move');
+    const p = ed.part(ed.sel), n = p && ed.els[p.id]; if (!p || ed.running) return;
+    snapshot();
+    const [w0, h0] = (p.rot || 0) % 180 ? [n.h, n.w] : [n.w, n.h], cx = p.x + w0 / 2, cy = p.y + h0 / 2;
+    p.rot = ((p.rot || 0) + 90) % 360;
+    const [w1, h1] = p.rot % 180 ? [n.h, n.w] : [n.w, n.h];
+    p.x = Math.round((cx - w1 / 2) * 100) / 100; p.y = Math.round((cy - h1 / 2) * 100) / 100;
+    layoutPart(p); ed.snapToBreadboard(p); renderWires(); changed('move');
   };
   ed.deleteSel = function () {
     if (ed.running) return;
