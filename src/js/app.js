@@ -115,8 +115,27 @@
     const sel = $('boardSelect'), cur = ed.board() ? IOTF.PARTS[ed.board().type].board : 'esp32';
     sel.innerHTML = Object.entries(IOTF.BOARDS).filter(([k, b]) => !basic || b.level === 'basic' || k === cur).map(([k, b]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${b.name}</option>`).join('');
     $('btnAutoPower').hidden = basic;
-    ed.renderPalette(); ed.hint();
+    document.body.classList.toggle('basicmode', basic);
+    ed.renderPalette(); ed.hint(); syncTabs();
   }
+  // tabs appear when the project needs them, so a first Basic project shows only Block / C++ / circuit check
+  function syncTabs() {
+    if (!ed.project) return;
+    const basic = ed.isBasic(), p = ed.project;
+    const code = p.codeManual ? (app.cm ? app.cm.getValue() : p.code || '') : (blocks.ws ? blocks.code() : '');
+    const types = p.parts.map((x) => x.type).join(' ');
+    const iot = !basic || (p.widgets || []).length || /PubSubClient|WiFi|HTTPClient|WebServer|esp_now/.test(code);
+    const cloud = !basic || (p.cloud && p.cloud.vars.length) || /thingProperties|ArduinoCloud/.test(code);
+    const show = (sel, on) => { const b = document.querySelector(sel); if (!b) return; b.hidden = !on; if (!on && b.classList.contains('on')) b.parentNode.querySelector('button[data-tab]').click(); };
+    show('#rightTabs button[data-tab="dash"]', iot);
+    show('#rightTabs button[data-tab="cloud"]', cloud);
+    show('#bottomTabs button[data-tab="lora"]', /lora|rfm95|sx127/i.test(types) || /LoRa\./.test(code));
+    show('#bottomTabs button[data-tab="files"]', /microsd|sd-card/i.test(types) || /\bSD\.|SD_MMC/.test(code));
+  }
+  app.syncTabs = syncTabs;
+  let tabsT = 0;
+  const syncTabsSoon = () => { clearTimeout(tabsT); tabsT = setTimeout(syncTabs, 400); };
+  app.syncTabsSoon = syncTabsSoon;
   function renderChecks() {
     const list = ed.check();
     const errs = list.filter((c) => c.lvl === 'err').length, warns = list.filter((c) => c.lvl === 'warn').length;
@@ -395,6 +414,11 @@
     $('wireStyle').onchange = (e) => ed.setWireStyle(e.target.value);
     $('btnRoute').onclick = () => { ed.autoRoute(); toast('จัดสายเรียบร้อย กด Ctrl+Z เพื่อย้อนกลับได้'); };
     $('btnClearBends').onclick = () => ed.clearBends();
+    ed.onChange(() => syncTabsSoon()); blocks.onChange(() => syncTabsSoon());
+    // the file menu (new / open / export)
+    $('btnMore').onclick = (e) => { e.stopPropagation(); const m = $('moreMenu'), r = $('btnMore').getBoundingClientRect(); m.style.left = r.left + 'px'; m.style.top = r.bottom + 4 + 'px'; m.hidden = !m.hidden; }; // fixed: the top bar clips overflow
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.more')) $('moreMenu').hidden = true; });
+    $('moreMenu').addEventListener('click', () => { $('moreMenu').hidden = true; });
     $('btnAutoPower').onclick = () => { const n = ed.autoPower(); toast(n ? `เพิ่มสายไฟ/กราวด์ ${n} เส้น` : 'ต่อไฟครบแล้ว'); renderChecks(); };
     document.querySelectorAll('#rightTabs button').forEach((b) => b.onclick = () => selectRightTab(b.dataset.tab));
     document.querySelectorAll('#bottomTabs button[data-tab]').forEach((b) => b.onclick = () => {

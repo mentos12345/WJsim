@@ -377,3 +377,12 @@ body.dash-open .blocklyToolboxDiv,body.dash-open .blocklyWidgetDiv,body.dash-ope
 #httpPage iframe{display:block;width:100%;height:320px;border:0;background:#fff}
 #httpPage.big{position:fixed;inset:60px 40px 40px 40px;z-index:105;box-shadow:0 10px 40px rgba(0,0,0,.6)}
 #httpPage.big iframe{height:calc(100% - 32px)}
+
+/* Basic: fewer controls on screen */
+body.basicmode #wireTools,body.basicmode #paletteHint{display:none}
+#rightTabs button[hidden],#bottomTabs button[hidden]{display:none}
+/* file menu */
+.more{position:relative;display:inline-block}
+.moremenu{position:fixed;z-index:115;display:flex;flex-direction:column;min-width:200px;padding:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.moremenu[hidden]{display:none}
+.moremenu .tb{text-align:left;padding:8px 10px;width:100%}

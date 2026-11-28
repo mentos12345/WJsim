@@ -28,10 +28,15 @@
   <div class="brand"><svg class="dot" viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="15" fill="#1b1c20"/><path d="M10.5 18 L19.5 49 L31 26 L42.5 49 L46 35" fill="none" stroke="#e87d0d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10.5" cy="18" r="4.2" fill="#e87d0d"/><circle cx="10.5" cy="18" r="1.7" fill="#1b1c20"/><circle cx="46" cy="35" r="4.2" fill="#e87d0d"/><circle cx="46" cy="35" r="1.7" fill="#1b1c20"/><path d="M46 26.5a8.5 8.5 0 0 1 8.5 8.5" fill="none" stroke="#ececec" stroke-width="3" stroke-linecap="round"/><path d="M46 20a15 15 0 0 1 15 15" fill="none" stroke="#ececec" stroke-width="3" stroke-linecap="round" opacity=".5"/></svg>WJSIM</div>
   <div class="menu">
     <button class="tb" id="btnDash" title="รายการโปรเจกต์ที่บันทึกไว้">โปรเจกต์ของฉัน</button>
-    <button class="tb" id="btnNew" title="โปรเจกต์ใหม่ (Ctrl+N)">ใหม่</button>
-    <button class="tb" id="btnOpen" title="เปิดไฟล์ .iotf (Ctrl+O)">เปิดไฟล์</button>
     <button class="tb" id="btnExamples">ตัวอย่าง</button>
-    <button class="tb" id="btnExport" title="ส่งออกโค้ดไปใช้กับ Arduino IDE">ส่งออก .ino</button>
+    <div class="more">
+      <button class="tb" id="btnMore" title="เมนูไฟล์" aria-haspopup="true">ไฟล์ ▾</button>
+      <div class="moremenu" id="moreMenu" hidden>
+        <button class="tb" id="btnNew" title="โปรเจกต์ใหม่ (Ctrl+N)">โปรเจกต์ใหม่</button>
+        <button class="tb" id="btnOpen" title="เปิดไฟล์ .iotf (Ctrl+O)">เปิดไฟล์ .iotf</button>
+        <button class="tb" id="btnExport" title="ส่งออกโค้ดไปใช้กับ Arduino IDE">ส่งออก .ino (Arduino IDE)</button>
+      </div>
+    </div>
   </div>
   <div class="seg" id="modeSeg">
     <button data-mode="basic" class="on">Basic</button>
@@ -135,8 +140,8 @@
 <footer id="bottom">
   <nav class="tabs" id="bottomTabs">
     <button data-tab="serial" class="on">Serial Monitor</button>
-    <button data-tab="lora">LoRa</button>
-    <button data-tab="files">ไฟล์ใน SD card</button>
+    <button data-tab="lora" hidden>LoRa</button>
+    <button data-tab="files" hidden>ไฟล์ใน SD card</button>
     <div class="spacer"></div>
     <button class="tb small" id="btnClearSerial">ล้าง</button>
   </nav>
@@ -165,7 +170,6 @@
     <div class="spacer"></div>
     <div id="acct" class="acct" hidden></div>
     <button class="btn" id="dashBack" hidden>กลับไปที่โปรเจกต์</button>
-    <button class="tb dclose" id="dashClose" title="ปิด (Esc)" aria-label="ปิด">✕</button>
   </header>
   <div class="dwrap">
     <div class="dlogin" id="dashLogin" hidden>

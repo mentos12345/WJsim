@@ -219,7 +219,7 @@
 
   function init() {
     const d = $('dash'); if (!d) return;
-    $('dashClose').onclick = hide; $('dashBack').onclick = hide;
+    $('dashBack').onclick = hide;
     $('dashNewBasic').onclick = () => newFromDash('basic');
     $('dashNewAdv').onclick = () => newFromDash('advanced');
     $('dashExamples').onclick = () => { hide(); IOTF.app.showExamples(); };
