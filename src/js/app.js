@@ -126,7 +126,8 @@
     const types = p.parts.map((x) => x.type).join(' ');
     const iot = !basic || (p.widgets || []).length || /PubSubClient|WiFi|HTTPClient|WebServer|esp_now/.test(code);
     const cloud = !basic || (p.cloud && p.cloud.vars.length) || /thingProperties|ArduinoCloud/.test(code);
-    const show = (sel, on) => { const b = document.querySelector(sel); if (!b) return; b.hidden = !on; if (!on && b.classList.contains('on')) b.parentNode.querySelector('button[data-tab]').click(); };
+    const show = (sel, on) => { const b = document.querySelector(sel); if (!b) return; b.hidden = !on; if (!on && b.classList.contains('on')) { const next = [...b.parentNode.querySelectorAll('button[data-tab]')].find((x) => !x.hidden); if (next) next.click(); } };
+    show('#rightTabs button[data-tab="blocks"]', basic); // Advanced is C++ only
     show('#rightTabs button[data-tab="dash"]', iot);
     show('#rightTabs button[data-tab="cloud"]', cloud);
     show('#bottomTabs button[data-tab="lora"]', /lora|rfm95|sx127/i.test(types) || /LoRa\./.test(code));
@@ -394,7 +395,7 @@
       if (b.dataset.mode === 'advanced') {
         toast('Advanced: ต้องต่อไฟเลี้ยง/กราวด์เอง กด "⚡ ต่อไฟ/กราวด์ให้อัตโนมัติ" ในแท็บตรวจวงจรได้');
         if (renderChecks().some((c) => c.lvl === 'err')) selectRightTab('check');
-      } else toast('Basic: ไฟเลี้ยงและกราวด์ต่อให้อัตโนมัติ');
+      } else { toast('Basic: ไฟเลี้ยงและกราวด์ต่อให้อัตโนมัติ'); selectRightTab('blocks'); }
       app.dirty();
     });
     $('boardSelect').onchange = (e) => {
